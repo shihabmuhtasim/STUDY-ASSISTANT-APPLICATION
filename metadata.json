@@ -1,0 +1,6 @@
+{
+  "name": "Study Assistant",
+  "description": "A web app for studying from lecture slides and PDF notes page by page with AI-assisted note-taking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
