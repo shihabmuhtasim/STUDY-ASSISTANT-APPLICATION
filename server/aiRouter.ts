@@ -5,7 +5,7 @@ export type AIRequest = { prompt: string; pageNumber: number; pageText?: string;
 type AIResult = { text: string; provider: 'cloudflare' | 'gemini' | 'local'; model: string };
 
 const SYSTEM_PROMPT = `You are a careful, capable study assistant. Answer only from the supplied PDF page context. If the page does not contain the answer, say so clearly. Preserve important names, numbers, formulas, and qualifications. Explain concepts in plain language, organize longer answers with short headings and bullets, and cite the supplied PDF page number when referring to evidence. Match the student's requested language.`;
-const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+const GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash-lite'];
 const TEXT_MODELS = [
   '@cf/qwen/qwen3-30b-a3b-fp8',
   '@cf/meta/llama-3.2-3b-instruct',
