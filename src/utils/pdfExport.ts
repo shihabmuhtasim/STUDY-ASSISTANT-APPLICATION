@@ -1,10 +1,94 @@
 import jsPDF from 'jspdf';
-import { PageNote, NoteBlock } from '../types';
+import { AnnotationStroke, PageNote, NoteBlock } from '../types';
 
 interface CleanLine {
   text: string;
   type: 'h1' | 'h2' | 'h3' | 'bullet' | 'normal' | 'question';
   raw: string;
+}
+
+interface RenderLine {
+  text: string;
+  type: CleanLine['type'];
+  indent: number;
+  fontSize: number;
+  isBold: boolean;
+  height: number;
+  gapAfter: number;
+}
+
+function wrapCanvasText(context: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const lines: string[] = [];
+  for (const paragraph of text.split('\n')) {
+    const words = paragraph.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      lines.push('');
+      continue;
+    }
+    let line = words[0];
+    for (const word of words.slice(1)) {
+      const candidate = `${line} ${word}`;
+      if (context.measureText(candidate).width <= maxWidth) line = candidate;
+      else {
+        lines.push(line);
+        line = word;
+      }
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
+function drawAnnotationsOnCanvas(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  annotations: AnnotationStroke[]
+) {
+  for (const annotation of annotations) {
+    context.save();
+    if (annotation.tool !== 'text') {
+      if (annotation.points.length === 0) {
+        context.restore();
+        continue;
+      }
+      context.beginPath();
+      context.lineCap = 'round';
+      context.lineJoin = 'round';
+      context.strokeStyle = annotation.color;
+      context.globalAlpha = annotation.tool === 'highlight' ? 0.32 : 1;
+      context.lineWidth = Math.max(2, annotation.width * width);
+      annotation.points.forEach((point, index) => {
+        const x = point.x * width;
+        const y = point.y * height;
+        if (index === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      });
+      context.stroke();
+      context.restore();
+      continue;
+    }
+
+    const x = annotation.x * width;
+    const y = annotation.y * height;
+    const boxWidth = annotation.width * width;
+    const boxHeight = annotation.height * height;
+    const fontSize = Math.max(12, annotation.fontSize * width);
+    const lineHeight = fontSize * 1.25;
+    context.fillStyle = 'rgba(255,255,255,0.86)';
+    context.fillRect(x, y, boxWidth, boxHeight);
+    context.beginPath();
+    context.rect(x, y, boxWidth, boxHeight);
+    context.clip();
+    context.font = `${fontSize}px Arial, sans-serif`;
+    context.fillStyle = annotation.color;
+    const lines = wrapCanvasText(context, annotation.text, Math.max(1, boxWidth - 12));
+    lines.forEach((line, index) => {
+      const lineY = y + fontSize + 6 + index * lineHeight;
+      if (lineY <= y + boxHeight) context.fillText(line, x + 6, lineY);
+    });
+    context.restore();
+  }
 }
 
 function richContentToStructuredText(value: string): string {
@@ -111,6 +195,7 @@ export async function exportStudyPackPDF(
   documentTitle: string,
   fileData: string,
   notes: Record<number, PageNote>,
+  annotations: Record<number, AnnotationStroke[]>,
   onProgress?: (progressText: string) => void
 ) {
   const pdfjsLib = await import('pdfjs-dist');
@@ -139,14 +224,13 @@ export async function exportStudyPackPDF(
 
     if (context) {
       await page.render({ canvasContext: context, viewport } as any).promise;
+      drawAnnotationsOnCanvas(context, canvas.width, canvas.height, annotations[pageIdx] || []);
       const imgData = canvas.toDataURL('image/jpeg', 0.85);
 
       if (pageIdx > 1) doc.addPage();
 
       const imgProps = doc.getImageProperties(imgData);
       const pdfRatio = imgProps.width / imgProps.height;
-      const targetRatio = contentWidth / (pageHeight - margin * 2);
-
       let renderWidth = contentWidth;
       let renderHeight = contentWidth / pdfRatio;
 
@@ -164,34 +248,51 @@ export async function exportStudyPackPDF(
       doc.setFontSize(9);
       doc.setFont('helvetica', 'italic');
       doc.setTextColor(148, 163, 184); // slate-400
-      doc.text(`Page ${pageIdx} of ${pdf.numPages} — ${documentTitle}`, pageWidth / 2, pageHeight - 6, { align: 'center' });
+      doc.text(`Page ${pageIdx} of ${pdf.numPages} - ${documentTitle}`, pageWidth / 2, pageHeight - 6, { align: 'center' });
 
       // 2. Render Formatted Notes Page if notes exist for this page
       const pageNote = notes[pageIdx];
       const hasContent = pageNote && (pageNote.content?.trim() || (pageNote.blocks && pageNote.blocks.length > 0));
 
       if (hasContent) {
-        doc.addPage();
-        let currentY = margin;
+        const notesTop = margin + 20;
+        const notesBottom = pageHeight - margin;
+        const cardPadding = 11;
+        const cardGap = 6;
+        let currentY = notesTop;
+        let notesPageCount = 0;
 
-        // Notes Header Banner
-        doc.setFillColor(243, 244, 246); // slate-100
-        doc.roundedRect(margin, currentY, contentWidth, 14, 3, 3, 'F');
-        
-        doc.setFillColor(79, 70, 229); // indigo-600 left accent bar
-        doc.rect(margin, currentY, 4, 14, 'F');
+        const drawNotesFooter = () => {
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'italic');
+          doc.setTextColor(148, 163, 184);
+          doc.text(`Notes for Page ${pageIdx} - ${documentTitle}`, pageWidth / 2, pageHeight - 6, { align: 'center' });
+        };
 
-        doc.setFontSize(13);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(30, 41, 59); // slate-800
-        doc.text(`Study Notes — Page ${pageIdx}`, margin + 8, currentY + 9.5);
+        const startNotesPage = (continued: boolean) => {
+          if (notesPageCount > 0) drawNotesFooter();
+          doc.addPage();
+          notesPageCount += 1;
 
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(100, 116, 139); // slate-500
-        doc.text(documentTitle, pageWidth - margin - 5, currentY + 9.5, { align: 'right' });
+          doc.setFillColor(243, 244, 246);
+          doc.roundedRect(margin, margin, contentWidth, 14, 3, 3, 'F');
+          doc.setFillColor(79, 70, 229);
+          doc.rect(margin, margin, 4, 14, 'F');
 
-        currentY += 20;
+          doc.setFontSize(13);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(30, 41, 59);
+          doc.text(`Study Notes - Page ${pageIdx}${continued ? ' (continued)' : ''}`, margin + 8, margin + 9.5);
+
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(100, 116, 139);
+          const titleLine = (doc.splitTextToSize(documentTitle, 62) as string[])[0] || documentTitle;
+          doc.text(titleLine, pageWidth - margin - 5, margin + 9.5, { align: 'right' });
+          currentY = notesTop;
+        };
+
+        startNotesPage(false);
 
         // Build list of blocks to render
         let blocksToRender: NoteBlock[] = [];
@@ -206,10 +307,8 @@ export async function exportStudyPackPDF(
           }];
         }
 
-        // Render each note block in a clean card container
-        for (let bIdx = 0; bIdx < blocksToRender.length; bIdx++) {
-          const block = blocksToRender[bIdx];
-          const isAi = block.isAiGenerated;
+        for (const block of blocksToRender) {
+          const isAi = Boolean(block.isAiGenerated);
 
           const parsedLines = parseMarkdownToCleanLines(block.content);
           if (block.question) {
@@ -220,9 +319,7 @@ export async function exportStudyPackPDF(
             });
           }
 
-          // Calculate height needed for this block
-          let blockHeight = 12; // Base padding top/bottom
-          const linesToDraw: { text: string; type: string; indent: number; fontSize: number; isBold: boolean }[] = [];
+          const linesToDraw: RenderLine[] = [];
 
           for (const item of parsedLines) {
             let fontSize = 10;
@@ -246,7 +343,7 @@ export async function exportStudyPackPDF(
               fontSize = 10;
               isBold = false;
               indent = 6;
-              textToWrap = `• ${item.text}`;
+              textToWrap = `- ${item.text}`;
             }
 
             doc.setFontSize(fontSize);
@@ -255,67 +352,77 @@ export async function exportStudyPackPDF(
             const maxW = contentWidth - 12 - indent;
             const wrapped = doc.splitTextToSize(textToWrap, maxW);
 
-            for (const lineStr of wrapped) {
+            wrapped.forEach((lineStr: string, index: number) => {
               linesToDraw.push({
                 text: lineStr,
                 type: item.type,
                 indent,
                 fontSize,
-                isBold
+                isBold,
+                height: (fontSize * 0.45) + 2,
+                gapAfter: index === wrapped.length - 1 ? 1.5 : 0,
               });
-              blockHeight += (fontSize * 0.45) + 2;
-            }
-            blockHeight += 1.5; // gap between paragraphs
+            });
           }
 
-          // Check page overflow
-          if (currentY + blockHeight > pageHeight - margin) {
-            doc.addPage();
-            currentY = margin;
-          }
-
-          // Draw note card background box
-          const boxY = currentY;
+          if (linesToDraw.length === 0) continue;
           const cardBgColor = isAi ? [245, 247, 255] : [248, 250, 252]; // soft indigo vs soft slate
           const cardBorderColor = isAi ? [224, 231, 255] : [226, 232, 240];
           const accentColor = isAi ? [99, 102, 241] : [16, 185, 129]; // indigo vs emerald
+          const totalBlockHeight = cardPadding + linesToDraw.reduce((height, line) => height + line.height + line.gapAfter, 0);
+          const freshPageCapacity = notesBottom - notesTop;
 
-          doc.setFillColor(cardBgColor[0], cardBgColor[1], cardBgColor[2]);
-          doc.setDrawColor(cardBorderColor[0], cardBorderColor[1], cardBorderColor[2]);
-          doc.setLineWidth(0.3);
-          doc.roundedRect(margin, boxY, contentWidth, blockHeight, 2, 2, 'FD');
-
-          // Draw left accent bar on card
-          doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
-          doc.rect(margin, boxY, 2.5, blockHeight, 'F');
-
-          // Render lines inside the card
-          let textY = boxY + 7;
-
-          for (const l of linesToDraw) {
-            doc.setFontSize(l.fontSize);
-            doc.setFont('helvetica', l.isBold ? 'bold' : 'normal');
-
-            if (l.type === 'question') {
-              doc.setTextColor(67, 56, 202); // indigo-700
-            } else if (l.type === 'h1' || l.type === 'h2' || l.type === 'h3') {
-              doc.setTextColor(30, 41, 59); // slate-800
-            } else {
-              doc.setTextColor(51, 65, 85); // slate-700
-            }
-
-            doc.text(l.text, margin + 6 + l.indent, textY);
-            textY += (l.fontSize * 0.45) + 2;
+          if (totalBlockHeight <= freshPageCapacity && currentY + totalBlockHeight > notesBottom) {
+            startNotesPage(true);
           }
 
-          currentY += blockHeight + 6; // Space after block
+          let lineIndex = 0;
+          while (lineIndex < linesToDraw.length) {
+            const availableLineHeight = notesBottom - currentY - cardPadding;
+            let chunkHeight = 0;
+            let chunkEnd = lineIndex;
+
+            while (chunkEnd < linesToDraw.length) {
+              const nextLine = linesToDraw[chunkEnd];
+              const nextHeight = nextLine.height + nextLine.gapAfter;
+              if (chunkEnd > lineIndex && chunkHeight + nextHeight > availableLineHeight) break;
+              if (chunkEnd === lineIndex && nextHeight > availableLineHeight) break;
+              chunkHeight += nextHeight;
+              chunkEnd += 1;
+            }
+
+            if (chunkEnd === lineIndex) {
+              startNotesPage(true);
+              continue;
+            }
+
+            const blockHeight = cardPadding + chunkHeight;
+            const boxY = currentY;
+            doc.setFillColor(cardBgColor[0], cardBgColor[1], cardBgColor[2]);
+            doc.setDrawColor(cardBorderColor[0], cardBorderColor[1], cardBorderColor[2]);
+            doc.setLineWidth(0.3);
+            doc.roundedRect(margin, boxY, contentWidth, blockHeight, 2, 2, 'FD');
+            doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+            doc.rect(margin, boxY, 2.5, blockHeight, 'F');
+
+            let textY = boxY + 7;
+            for (const line of linesToDraw.slice(lineIndex, chunkEnd)) {
+              doc.setFontSize(line.fontSize);
+              doc.setFont('helvetica', line.isBold ? 'bold' : 'normal');
+              if (line.type === 'question') doc.setTextColor(67, 56, 202);
+              else if (line.type === 'h1' || line.type === 'h2' || line.type === 'h3') doc.setTextColor(30, 41, 59);
+              else doc.setTextColor(51, 65, 85);
+              doc.text(line.text, margin + 6 + line.indent, textY);
+              textY += line.height + line.gapAfter;
+            }
+
+            currentY += blockHeight + cardGap;
+            lineIndex = chunkEnd;
+            if (lineIndex < linesToDraw.length) startNotesPage(true);
+          }
         }
 
-        // Footer on notes page
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'italic');
-        doc.setTextColor(148, 163, 184);
-        doc.text(`Notes for Page ${pageIdx} — ${documentTitle}`, pageWidth / 2, pageHeight - 6, { align: 'center' });
+        drawNotesFooter();
       }
     }
   }

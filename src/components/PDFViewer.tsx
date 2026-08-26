@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { ChevronLeft, ChevronRight, Eraser, Highlighter, Loader2, PenLine, RotateCcw, Search, Trash2, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react';
-import { AnnotationStroke } from '../types';
+import { ChevronLeft, ChevronRight, Eraser, Highlighter, Loader2, PenLine, RotateCcw, Search, Trash2, Type, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { AnnotationStroke, AnnotationTool } from '../types';
 import { AnnotationCanvas } from './AnnotationCanvas';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -34,7 +34,7 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
   const [hasSearched, setHasSearched] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [annotationEnabled, setAnnotationEnabled] = useState(false);
-  const [annotationTool, setAnnotationTool] = useState<'pen' | 'highlight' | 'eraser'>('pen');
+  const [annotationTool, setAnnotationTool] = useState<AnnotationTool>('pen');
   const [annotationColor, setAnnotationColor] = useState('#ef4444');
 
   const pageRef = useRef<HTMLDivElement>(null);
@@ -334,6 +334,7 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
             <>
               <button type="button" onClick={() => setAnnotationTool('pen')} className={`p-1.5 rounded ${annotationTool === 'pen' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500'}`} title="Pen"><PenLine size={15} /></button>
               <button type="button" onClick={() => setAnnotationTool('highlight')} className={`p-1.5 rounded ${annotationTool === 'highlight' ? 'bg-white text-amber-600 shadow-xs' : 'text-slate-500'}`} title="Highlighter"><Highlighter size={15} /></button>
+              <button type="button" onClick={() => setAnnotationTool('text')} className={`p-1.5 rounded ${annotationTool === 'text' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500'}`} title="Add text box"><Type size={15} /></button>
               <button type="button" onClick={() => setAnnotationTool('eraser')} className={`p-1.5 rounded ${annotationTool === 'eraser' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500'}`} title="Eraser"><Eraser size={15} /></button>
               <input type="color" aria-label="Annotation color" value={annotationColor} onChange={(event) => setAnnotationColor(event.target.value)} className="h-6 w-6 cursor-pointer border-0 bg-transparent p-0" />
               <button type="button" onClick={() => onAnnotationsChange(annotations.slice(0, -1))} disabled={annotations.length === 0} className="p-1.5 text-slate-500 disabled:opacity-25" title="Undo annotation"><Undo2 size={15} /></button>

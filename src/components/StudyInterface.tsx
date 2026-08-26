@@ -195,6 +195,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
         document.title || 'Study_Pack',
         document.fileData,
         notes,
+        annotations,
         (progress) => setExportProgress(progress)
       );
     } catch (error) {
