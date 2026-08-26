@@ -32,6 +32,7 @@ export async function routeAIRequest(request: AIRequest): Promise<AIResult> {
 
   if (preferredTarget?.provider === 'gemini' && env.GEMINI_API_KEY) runners.push(() => runGemini(request, [preferredTarget.model]));
   if (preferredTarget?.provider === 'cloudflare' && env.AI) runners.push(() => runCloudflare(request, [preferredTarget.model]));
+  if (preferredTarget?.provider === 'cloudflare' && !env.AI && env.CLOUDFLARE_AI_ENDPOINT) runners.push(() => runRemoteCloudflare(request));
 
   if (preference === 'auto' || request.allowFallback !== false) {
     const remainingGemini = GEMINI_MODELS.filter((model) => model !== preferredTarget?.model);
