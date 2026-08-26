@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, Edit3, Eye, Sparkles, HelpCircle, Bold, Heading, List } from 'lucide-react';
-import Markdown from 'react-markdown';
+import { X, Check, Sparkles, HelpCircle } from 'lucide-react';
+import { markdownToRichTextHtml, RichTextEditor, richTextToPlainText } from './RichTextEditor';
 
 interface EditInsertModalProps {
   isOpen: boolean;
@@ -20,14 +20,12 @@ export function EditInsertModal({
   const [editedContent, setEditedContent] = useState('');
   const [includeQuestion, setIncludeQuestion] = useState(true);
   const [questionHeader, setQuestionHeader] = useState('');
-  const [activeTab, setActiveTab] = useState<'edit' | 'preview'>('edit');
 
   useEffect(() => {
     if (isOpen) {
-      setEditedContent(aiResponse);
+      setEditedContent(markdownToRichTextHtml(aiResponse));
       setQuestionHeader(promptQuestion);
       setIncludeQuestion(!!promptQuestion.trim());
-      setActiveTab('edit');
     }
   }, [isOpen, aiResponse, promptQuestion]);
 
@@ -39,20 +37,6 @@ export function EditInsertModal({
       includeQuestion && questionHeader.trim() ? questionHeader.trim() : undefined
     );
     onClose();
-  };
-
-  const insertFormat = (prefix: string, suffix: string = '') => {
-    const textarea = document.getElementById('edit-note-textarea') as HTMLTextAreaElement;
-    if (!textarea) return;
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selectedText = editedContent.substring(start, end) || 'text';
-    const replacement = `${prefix}${selectedText}${suffix}`;
-
-    const newContent =
-      editedContent.substring(0, start) + replacement + editedContent.substring(end);
-    setEditedContent(newContent);
   };
 
   return (
@@ -105,86 +89,13 @@ export function EditInsertModal({
             )}
           </div>
 
-          {/* Edit / Preview Tabs */}
-          <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
-              <button
-                onClick={() => setActiveTab('edit')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
-                  activeTab === 'edit'
-                    ? 'bg-white text-slate-800 shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <Edit3 size={14} />
-                Edit Markdown
-              </button>
-              <button
-                onClick={() => setActiveTab('preview')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
-                  activeTab === 'preview'
-                    ? 'bg-white text-slate-800 shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <Eye size={14} />
-                Formatted Preview
-              </button>
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h3 className="text-xs font-semibold text-slate-700">Format note content</h3>
+              <span className="text-[11px] text-slate-400">Select text, then choose a format</span>
             </div>
-
-            {activeTab === 'edit' && (
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => insertFormat('**', '**')}
-                  className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md"
-                  title="Bold (**text**)"
-                >
-                  <Bold size={14} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => insertFormat('### ')}
-                  className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md"
-                  title="Heading (### Header)"
-                >
-                  <Heading size={14} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => insertFormat('* ')}
-                  className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md"
-                  title="Bullet list (* Item)"
-                >
-                  <List size={14} />
-                </button>
-              </div>
-            )}
+            <RichTextEditor value={editedContent} onChange={setEditedContent} minHeight={280} />
           </div>
-
-          {/* Editor Area */}
-          {activeTab === 'edit' ? (
-            <textarea
-              id="edit-note-textarea"
-              value={editedContent}
-              onChange={(e) => setEditedContent(e.target.value)}
-              placeholder="Refine or customize the note content..."
-              className="w-full h-56 p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-sans text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 leading-relaxed resize-none"
-            />
-          ) : (
-            <div className="h-56 p-4 bg-slate-50 border border-slate-200 rounded-xl overflow-y-auto">
-              <div className="bg-white p-4 rounded-xl border border-indigo-100 shadow-xs space-y-2">
-                {includeQuestion && questionHeader.trim() && (
-                  <h4 className="text-xs font-bold text-indigo-700 pb-2 border-b border-indigo-50">
-                    Q: {questionHeader}
-                  </h4>
-                )}
-                <div className="prose prose-sm prose-slate max-w-none">
-                  <Markdown>{editedContent || '_No content entered_'}</Markdown>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Footer Actions */}
@@ -197,7 +108,7 @@ export function EditInsertModal({
           </button>
           <button
             onClick={handleConfirm}
-            disabled={!editedContent.trim()}
+            disabled={!richTextToPlainText(editedContent).trim()}
             className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium transition-colors shadow-xs disabled:opacity-50"
           >
             <Check size={16} />
