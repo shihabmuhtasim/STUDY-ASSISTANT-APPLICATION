@@ -3,6 +3,7 @@ declare namespace Cloudflare {
     DB: D1Database;
     AI?: Ai;
     CLOUDFLARE_AI_MODEL?: string;
+    CLOUDFLARE_AI_ENDPOINT?: string;
     GEMINI_API_KEY?: string;
     GEMINI_MODEL?: string;
   }

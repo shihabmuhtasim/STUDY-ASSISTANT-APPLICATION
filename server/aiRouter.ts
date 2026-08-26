@@ -9,6 +9,7 @@ const SYSTEM_PROMPT = `You are a careful study assistant. Answer using the suppl
 export async function routeAIRequest(request: AIRequest): Promise<AIResult> {
   const runners: Array<() => Promise<AIResult>> = [];
   if (env.AI) runners.push(() => runCloudflare(request));
+  if (!env.AI && env.CLOUDFLARE_AI_ENDPOINT) runners.push(() => runRemoteCloudflare(request));
   if (env.GEMINI_API_KEY) runners.push(() => runGemini(request));
   if (runners.length === 0) throw new Error('AI_NOT_CONFIGURED');
 
@@ -18,6 +19,21 @@ export async function routeAIRequest(request: AIRequest): Promise<AIResult> {
     catch (error) { lastError = error; console.error('AI provider failed; trying fallback', error); }
   }
   throw lastError || new Error('AI_UNAVAILABLE');
+}
+
+async function runRemoteCloudflare(request: AIRequest): Promise<AIResult> {
+  const response = await fetch(env.CLOUDFLARE_AI_ENDPOINT!, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  const data = await response.json() as { response?: string; error?: string; model?: string };
+  if (!response.ok || !data.response) throw new Error(data.error || `CLOUDFLARE_${response.status}`);
+  return {
+    text: data.response,
+    provider: 'cloudflare',
+    model: data.model || '@cf/google/gemma-4-26b-a4b-it',
+  };
 }
 
 async function runCloudflare(request: AIRequest): Promise<AIResult> {
