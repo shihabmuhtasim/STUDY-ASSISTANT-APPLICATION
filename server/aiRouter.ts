@@ -92,9 +92,12 @@ async function runGemini(request: AIRequest): Promise<AIResult> {
         const mimeType = metadata?.match(/data:(.*?);base64/)?.[1] || 'image/jpeg';
         parts.unshift({ inlineData: { mimeType, data: data || request.pageImage } });
       }
-      const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY!)}`, {
+      const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          'x-goog-api-key': env.GEMINI_API_KEY!,
+        },
         body: JSON.stringify({
           contents: [{ role: 'user', parts }],
           generationConfig: { maxOutputTokens: 900, temperature: 0.2 },
