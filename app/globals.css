@@ -26,9 +26,30 @@ textarea {
 
 button:focus-visible,
 input:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+[contenteditable="true"]:focus-visible {
   outline: 2px solid #4f46e5;
   outline-offset: 2px;
+}
+
+.rich-text-editor:empty::before {
+  color: #94a3b8;
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+.rich-text-editor ul,
+.rich-note-content ul {
+  list-style: disc;
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+}
+
+.rich-text-editor ol,
+.rich-note-content ol {
+  list-style: decimal;
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
 }
 
 .custom-scrollbar::-webkit-scrollbar {

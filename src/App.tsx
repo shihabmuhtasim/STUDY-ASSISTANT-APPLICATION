@@ -78,6 +78,7 @@ export default function App({ initialAccount }: AppProps) {
     try {
       await set('study_documents', newDocs);
       await del(`notes_${id}`);
+      await del(`annotations_${id}`);
     } catch (error) {
       console.error('Failed to delete local document data', error);
       setStorageError('The document was removed from this view, but some local data may remain.');

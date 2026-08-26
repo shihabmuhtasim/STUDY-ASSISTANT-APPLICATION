@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PDFViewer } from './PDFViewer';
 import { NotesPanel } from './NotesPanel';
 import { AIAssistant } from './AIAssistant';
-import { AccountIdentity, AccountSummary, StudyDocument, PageNote, AIInteraction, NoteBlock } from '../types';
+import { AccountIdentity, AccountSummary, StudyDocument, PageNote, AIInteraction, NoteBlock, AnnotationStroke } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { ArrowLeft, Download, BookOpen, GripVertical, GripHorizontal, FileText, Sparkles, LayoutGrid, Eye, Check } from 'lucide-react';
 import { get, set } from 'idb-keyval';
@@ -23,6 +23,8 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   const [pageText, setPageText] = useState('');
   const [notes, setNotes] = useState<Record<number, PageNote>>({});
   const [isNotesLoaded, setIsNotesLoaded] = useState(false);
+  const [annotations, setAnnotations] = useState<Record<number, AnnotationStroke[]>>({});
+  const [areAnnotationsLoaded, setAreAnnotationsLoaded] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<string | null>(null);
 
@@ -70,6 +72,18 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
       set(`notes_${document.id}`, notes).catch(e => console.error("Failed to save notes", e));
     }
   }, [notes, document.id, isNotesLoaded]);
+
+  useEffect(() => {
+    get<Record<number, AnnotationStroke[]>>(`annotations_${document.id}`)
+      .then((saved) => { if (saved) setAnnotations(saved); })
+      .catch((error) => console.error('Failed to load annotations', error))
+      .finally(() => setAreAnnotationsLoaded(true));
+  }, [document.id]);
+
+  useEffect(() => {
+    if (!areAnnotationsLoaded) return;
+    set(`annotations_${document.id}`, annotations).catch((error) => console.error('Failed to save annotations', error));
+  }, [annotations, areAnnotationsLoaded, document.id]);
 
   const currentNote: PageNote = notes[pageNumber] || {
     id: uuidv4(),
@@ -158,6 +172,8 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     onPageRenderSuccess: setPageImage,
     onPageTextReady: setPageText,
     onDocumentLoaded: handleDocumentLoaded,
+    annotations: annotations[pageNumber] || [],
+    onAnnotationsChange: (strokes: AnnotationStroke[]) => setAnnotations((current) => ({ ...current, [pageNumber]: strokes })),
   };
 
   const aiAssistantProps = {

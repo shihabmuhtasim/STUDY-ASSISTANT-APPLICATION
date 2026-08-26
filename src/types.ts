@@ -15,6 +15,14 @@ export interface NoteBlock {
   isAiGenerated?: boolean;
 }
 
+export interface AnnotationStroke {
+  id: string;
+  tool: 'pen' | 'highlight';
+  color: string;
+  width: number;
+  points: Array<{ x: number; y: number }>;
+}
+
 export interface PageNote {
   id: string;
   documentId: string;

@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { ChevronLeft, ChevronRight, Loader2, RotateCcw, Search, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Eraser, Highlighter, Loader2, PenLine, RotateCcw, Search, Trash2, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { AnnotationStroke } from '../types';
+import { AnnotationCanvas } from './AnnotationCanvas';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
@@ -14,9 +16,11 @@ interface PDFViewerProps {
   onPageRenderSuccess: (base64Image: string) => void;
   onPageTextReady: (text: string) => void;
   onDocumentLoaded: (totalPages: number) => void;
+  annotations: AnnotationStroke[];
+  onAnnotationsChange: (strokes: AnnotationStroke[]) => void;
 }
 
-export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess, onPageTextReady, onDocumentLoaded }: PDFViewerProps) {
+export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess, onPageTextReady, onDocumentLoaded, annotations, onAnnotationsChange }: PDFViewerProps) {
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [scale, setScale] = useState(1.0);
@@ -27,11 +31,17 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
   const [searchResults, setSearchResults] = useState<number[]>([]);
   const [activeSearchResult, setActiveSearchResult] = useState(-1);
   const [isSearching, setIsSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [annotationEnabled, setAnnotationEnabled] = useState(false);
+  const [annotationTool, setAnnotationTool] = useState<'pen' | 'highlight' | 'eraser'>('pen');
+  const [annotationColor, setAnnotationColor] = useState('#ef4444');
 
   const pageRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const textCache = useRef(new Map<number, string>());
+  const pinchStart = useRef<{ distance: number; scale: number } | null>(null);
+  const touchPan = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
 
   useEffect(() => {
     setInputPage(pageNumber.toString());
@@ -94,7 +104,7 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
 
   function handleRenderSuccess() {
     if (pageRef.current) {
-      const canvas = pageRef.current.querySelector('canvas');
+      const canvas = pageRef.current.querySelector<HTMLCanvasElement>('.react-pdf__Page__canvas');
       if (canvas) {
         const dataUrl = canvas.toDataURL('image/jpeg', 0.78);
         onPageRenderSuccess(dataUrl);
@@ -112,13 +122,30 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
     }
   };
 
-  const resetZoom = () => setScale(1.0);
+  const setZoom = useCallback((value: number, clientX?: number, clientY?: number) => {
+    const next = Math.min(3, Math.max(0.5, Number(value.toFixed(2))));
+    const container = containerRef.current;
+    if (!container) { setScale(next); return; }
+    const rect = container.getBoundingClientRect();
+    const anchorX = (clientX ?? rect.left + rect.width / 2) - rect.left;
+    const anchorY = (clientY ?? rect.top + rect.height / 2) - rect.top;
+    const ratioX = (container.scrollLeft + anchorX) / Math.max(1, container.scrollWidth);
+    const ratioY = (container.scrollTop + anchorY) / Math.max(1, container.scrollHeight);
+    setScale(next);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      container.scrollLeft = ratioX * container.scrollWidth - anchorX;
+      container.scrollTop = ratioY * container.scrollHeight - anchorY;
+    }));
+  }, []);
+
+  const resetZoom = () => setZoom(1.0);
 
   const runSearch = async (event: React.FormEvent) => {
     event.preventDefault();
     const normalized = searchQuery.trim().toLowerCase();
     if (!normalized || !pdfDocument) return;
     setIsSearching(true);
+    setHasSearched(true);
     try {
       const matches: number[] = [];
       for (let page = 1; page <= pdfDocument.numPages; page += 1) {
@@ -145,7 +172,7 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
 
   // Mouse Drag-to-Pan Handlers
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || annotationEnabled) return;
     // Only initiate drag if left mouse button is clicked
     if (e.button !== 0) return;
 
@@ -169,6 +196,45 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
 
   const handleMouseUp = () => {
     setIsPanning(false);
+  };
+
+  const handleWheel = (event: React.WheelEvent) => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    setZoom(scale + (event.deltaY < 0 ? 0.15 : -0.15), event.clientX, event.clientY);
+  };
+
+  const touchDistance = (touches: React.TouchList) => Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+
+  const handleTouchStart = (event: React.TouchEvent) => {
+    if (annotationEnabled || !containerRef.current) return;
+    if (event.touches.length === 2) {
+      pinchStart.current = { distance: touchDistance(event.touches), scale };
+      touchPan.current = null;
+    } else if (event.touches.length === 1) {
+      const touch = event.touches[0];
+      touchPan.current = { x: touch.clientX, y: touch.clientY, scrollLeft: containerRef.current.scrollLeft, scrollTop: containerRef.current.scrollTop };
+    }
+  };
+
+  const handleTouchMove = (event: React.TouchEvent) => {
+    const container = containerRef.current;
+    if (annotationEnabled || !container) return;
+    event.preventDefault();
+    if (event.touches.length === 2 && pinchStart.current) {
+      const midpointX = (event.touches[0].clientX + event.touches[1].clientX) / 2;
+      const midpointY = (event.touches[0].clientY + event.touches[1].clientY) / 2;
+      setZoom(pinchStart.current.scale * (touchDistance(event.touches) / pinchStart.current.distance), midpointX, midpointY);
+    } else if (event.touches.length === 1 && touchPan.current) {
+      const touch = event.touches[0];
+      container.scrollLeft = touchPan.current.scrollLeft - (touch.clientX - touchPan.current.x);
+      container.scrollTop = touchPan.current.scrollTop - (touch.clientY - touchPan.current.y);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    pinchStart.current = null;
+    touchPan.current = null;
   };
 
   return (
@@ -213,7 +279,7 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
         {/* Zoom Controls & Presets */}
         <div className="flex items-center gap-1">
           <button
-            onClick={() => setScale(s => Math.max(0.5, Number((s - 0.2).toFixed(2))))}
+            onClick={() => setZoom(scale - 0.2)}
             className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors"
             title="Zoom Out"
           >
@@ -223,21 +289,21 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
           {/* Quick Zoom Presets */}
           <div className="flex items-center bg-slate-100 p-0.5 rounded-md text-xs font-semibold">
             <button
-              onClick={() => setScale(1.0)}
+              onClick={() => setZoom(1.0)}
               className={`px-1.5 py-0.5 rounded ${scale === 1.0 ? 'bg-white text-indigo-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}
               title="Fit Page (100%)"
             >
               100%
             </button>
             <button
-              onClick={() => setScale(1.4)}
+              onClick={() => setZoom(1.4)}
               className={`px-1.5 py-0.5 rounded ${scale === 1.4 ? 'bg-white text-indigo-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}
               title="Zoom 140%"
             >
               140%
             </button>
             <button
-              onClick={() => setScale(1.8)}
+              onClick={() => setZoom(1.8)}
               className={`px-1.5 py-0.5 rounded ${scale === 1.8 ? 'bg-white text-indigo-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}
               title="Zoom 180%"
             >
@@ -246,7 +312,7 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
           </div>
 
           <button
-            onClick={() => setScale(s => Math.min(3.0, Number((s + 0.2).toFixed(2))))}
+            onClick={() => setZoom(scale + 0.2)}
             className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-700 transition-colors"
             title="Zoom In"
           >
@@ -262,6 +328,20 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
           </button>
         </div>
 
+        <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+          <button type="button" onClick={() => { setAnnotationEnabled((value) => !value); setAnnotationTool('pen'); }} className={`p-1.5 rounded ${annotationEnabled ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-white'}`} title="Draw on PDF"><PenLine size={15} /></button>
+          {annotationEnabled && (
+            <>
+              <button type="button" onClick={() => setAnnotationTool('pen')} className={`p-1.5 rounded ${annotationTool === 'pen' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500'}`} title="Pen"><PenLine size={15} /></button>
+              <button type="button" onClick={() => setAnnotationTool('highlight')} className={`p-1.5 rounded ${annotationTool === 'highlight' ? 'bg-white text-amber-600 shadow-xs' : 'text-slate-500'}`} title="Highlighter"><Highlighter size={15} /></button>
+              <button type="button" onClick={() => setAnnotationTool('eraser')} className={`p-1.5 rounded ${annotationTool === 'eraser' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500'}`} title="Eraser"><Eraser size={15} /></button>
+              <input type="color" aria-label="Annotation color" value={annotationColor} onChange={(event) => setAnnotationColor(event.target.value)} className="h-6 w-6 cursor-pointer border-0 bg-transparent p-0" />
+              <button type="button" onClick={() => onAnnotationsChange(annotations.slice(0, -1))} disabled={annotations.length === 0} className="p-1.5 text-slate-500 disabled:opacity-25" title="Undo annotation"><Undo2 size={15} /></button>
+              <button type="button" onClick={() => annotations.length > 0 && window.confirm('Clear annotations on this page?') && onAnnotationsChange([])} disabled={annotations.length === 0} className="p-1.5 text-slate-500 hover:text-red-600 disabled:opacity-25" title="Clear page annotations"><Trash2 size={15} /></button>
+            </>
+          )}
+        </div>
+
         <form onSubmit={runSearch} className="order-last sm:order-none w-full sm:w-auto flex items-center gap-1">
           <label className="relative flex-1 sm:w-44">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -270,13 +350,16 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
               value={searchQuery}
               onChange={(event) => {
                 setSearchQuery(event.target.value);
-                if (!event.target.value) { setSearchResults([]); setActiveSearchResult(-1); }
+                setHasSearched(false);
+                setSearchResults([]);
+                setActiveSearchResult(-1);
               }}
               placeholder="Search PDF"
               className="w-full pl-8 pr-7 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:border-indigo-500"
             />
-            {isSearching ? <Loader2 size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-indigo-500" /> : searchQuery && <button type="button" onClick={() => { setSearchQuery(''); setSearchResults([]); setActiveSearchResult(-1); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" aria-label="Clear PDF search"><X size={14} /></button>}
+            {isSearching ? <Loader2 size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-indigo-500" /> : searchQuery && <button type="button" onClick={() => { setSearchQuery(''); setSearchResults([]); setActiveSearchResult(-1); setHasSearched(false); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" aria-label="Clear PDF search"><X size={14} /></button>}
           </label>
+          <button type="submit" disabled={!searchQuery.trim() || !pdfDocument || isSearching} className="p-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40" title="Search PDF" aria-label="Search PDF"><Search size={15} /></button>
           {searchResults.length > 0 && (
             <div className="flex items-center gap-0.5 text-[11px] text-slate-500 whitespace-nowrap">
               <button type="button" onClick={() => moveSearchResult(-1)} className="p-1 hover:bg-slate-100 rounded" aria-label="Previous search result"><ChevronLeft size={14} /></button>
@@ -284,7 +367,7 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
               <button type="button" onClick={() => moveSearchResult(1)} className="p-1 hover:bg-slate-100 rounded" aria-label="Next search result"><ChevronRight size={14} /></button>
             </div>
           )}
-          {searchQuery && !isSearching && activeSearchResult === -1 && searchResults.length === 0 && <span className="text-[11px] text-slate-400 whitespace-nowrap">No matches</span>}
+          {hasSearched && searchQuery && !isSearching && searchResults.length === 0 && <span className="text-[11px] text-slate-400 whitespace-nowrap">No matches</span>}
         </form>
       </div>
 
@@ -297,18 +380,17 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        className={`flex-1 overflow-auto p-4 lg:p-6 flex justify-center items-start bg-slate-200/60 touch-pan-x touch-pan-y transition-colors ${
-          scale > 1.0 ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'
+        onWheel={handleWheel}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{ touchAction: 'none' }}
+        className={`flex-1 overflow-auto bg-slate-200/60 transition-colors ${
+          annotationEnabled ? 'cursor-default' : scale > 1.0 ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'
         }`}
       >
-        <div
-          ref={pageRef}
-          className="shadow-xl bg-white rounded-xs transition-transform duration-150 ease-out"
-          style={{
-            // Allow horizontal and vertical expansion when zoomed
-            minWidth: scale > 1.0 ? 'max-content' : undefined,
-          }}
-        >
+        <div className="flex min-h-full min-w-full w-max items-start justify-center p-4 lg:p-6">
+        <div ref={pageRef} className="relative shrink-0 bg-white shadow-xl">
           <Document
             file={file}
             onLoadSuccess={onDocumentLoadSuccess}
@@ -333,6 +415,8 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
               className="block"
             />
           </Document>
+          <AnnotationCanvas enabled={annotationEnabled} tool={annotationTool} color={annotationColor} strokes={annotations} onChange={onAnnotationsChange} />
+        </div>
         </div>
       </div>
     </div>
