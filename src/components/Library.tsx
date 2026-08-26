@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { BookOpen, ChevronRight, Clock, FileText, LogIn, LogOut, Pencil, Search, Trash2, Upload, UserRound, X } from 'lucide-react';
+import { BookOpen, ChevronRight, Clock, FileText, Pencil, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { AccountIdentity, AccountSummary, StudyDocument } from '../types';
 
@@ -14,7 +14,7 @@ interface LibraryProps {
 
 const MAX_PDF_BYTES = 50 * 1024 * 1024;
 
-export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocument, onUpdateDocument, account }: LibraryProps) {
+export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocument, onUpdateDocument }: LibraryProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [query, setQuery] = useState('');
@@ -69,8 +69,6 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
     setEditingId(null);
   };
 
-  const accountUsage = account && 'aiRemaining' in account ? `${account.aiRemaining} AI questions left` : 'Local workspace';
-
   return (
     <main className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
@@ -79,21 +77,11 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
             <span className="w-9 h-9 rounded-lg bg-indigo-600 text-white grid place-items-center shrink-0"><BookOpen size={19} /></span>
             <div className="min-w-0">
               <p className="font-semibold text-slate-900 leading-tight">Study Assistant</p>
-              <p className="text-xs text-slate-500 truncate">{accountUsage}</p>
+              <p className="text-xs text-slate-500 truncate">Free public workspace</p>
             </div>
           </div>
 
-          {account ? (
-            <div className="flex items-center gap-2">
-              <div className="hidden sm:flex items-center gap-2 min-w-0">
-                <UserRound size={16} className="text-slate-400 shrink-0" />
-                <span className="text-sm text-slate-700 max-w-48 truncate">{account.displayName}</span>
-              </div>
-              <a href="/signout-with-chatgpt?return_to=/" className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg" title="Sign out" aria-label="Sign out"><LogOut size={17} /></a>
-            </div>
-          ) : (
-            <a href="/signin-with-chatgpt?return_to=/" className="inline-flex items-center gap-2 px-3 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800"><LogIn size={16} />Sign in</a>
-          )}
+          <span className="inline-flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700"><Sparkles size={16} />Free AI</span>
         </div>
       </header>
 

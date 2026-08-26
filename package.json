@@ -7,6 +7,7 @@
     "dev": "vinext dev --port 3000",
     "build": "vinext build",
     "start": "vinext start",
+    "deploy:cloudflare": "npm run build && vinext-cloudflare deploy --config dist/server/wrangler.json --skip-build",
     "lint": "tsc --noEmit",
     "db:generate": "drizzle-kit generate"
   },
@@ -38,6 +39,7 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@types/uuid": "^10.0.0",
+    "@vinext/cloudflare": "^1.0.0-beta.3",
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.26",
     "drizzle-kit": "0.31.10",

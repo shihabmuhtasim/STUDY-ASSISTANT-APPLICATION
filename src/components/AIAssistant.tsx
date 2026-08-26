@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Copy, Image as ImageIcon, Loader2, LockKeyhole, Plus, Send, Sparkles } from 'lucide-react';
+import { Check, Copy, Image as ImageIcon, Loader2, Plus, Send, Sparkles } from 'lucide-react';
 import { AccountIdentity, AccountSummary, AIInteraction } from '../types';
 import { AIRequestError, askAIAboutPage } from '../services/ai';
 import { v4 as uuidv4 } from 'uuid';
@@ -24,8 +24,6 @@ export function AIAssistant({
   pageImage,
   pageText,
   history,
-  account,
-  onRemainingChange,
   onAddInteraction,
   onInsertToNotes,
 }: AIAssistantProps) {
@@ -43,10 +41,6 @@ export function AIAssistant({
 
   const handleAsk = async (text: string) => {
     if (!text.trim() || isLoading) return;
-    if (!account) {
-      setError('Sign in to use the page assistant. Your PDFs remain stored on this device.');
-      return;
-    }
     if (!pageText.trim() && !pageImage) {
       setError('The page is still being prepared. Try again in a moment.');
       return;
@@ -70,7 +64,6 @@ export function AIAssistant({
         createdAt: Date.now(),
         insertedIntoNotes: false,
       });
-      if (typeof result.remaining === 'number') onRemainingChange(result.remaining);
     } catch (requestError) {
       if (requestError instanceof AIRequestError) setError(requestError.message);
       else setError('The AI assistant could not answer right now. Try again.');
@@ -96,26 +89,15 @@ export function AIAssistant({
           <Sparkles size={18} className="text-indigo-600 shrink-0" />
           <h3 className="font-medium text-slate-800 text-sm truncate">AI Page Assistant</h3>
         </div>
-        {account && 'aiRemaining' in account && (
-          <span className="text-xs text-slate-500 whitespace-nowrap">{account.aiRemaining} left</span>
-        )}
+        <span className="text-xs font-medium text-emerald-700 whitespace-nowrap">Free access</span>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-        {!account ? (
-          <div className="min-h-full grid place-items-center text-center py-8">
-            <div>
-              <LockKeyhole size={24} className="mx-auto text-slate-400" />
-              <p className="mt-3 text-sm font-medium text-slate-800">Sign in to ask about this page</p>
-              <p className="mt-1 text-xs text-slate-500 max-w-xs">Your PDF stays on this device. Only the current page context is sent when you ask a question.</p>
-              <a href="/signin-with-chatgpt?return_to=/" className="mt-4 inline-flex px-3 py-2 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800">Sign in</a>
-            </div>
-          </div>
-        ) : history.length === 0 ? (
+        {history.length === 0 ? (
           <div className="py-8 text-center">
             <Sparkles size={24} className="mx-auto text-indigo-500" />
             <p className="mt-3 font-medium text-slate-700 text-sm">Ask about page {pageNumber}</p>
-            <p className="text-xs text-slate-500 mt-1">Answers use the text extracted from this page.</p>
+            <p className="text-xs text-slate-500 mt-1">The selected page context is sent to Cloudflare Workers AI, with Gemini used only when configured as a fallback.</p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
               {quickPrompts.map((item) => (
                 <button key={item} type="button" onClick={() => handleAsk(item)} className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-700 hover:border-indigo-300 hover:text-indigo-700">{item}</button>
@@ -156,12 +138,12 @@ export function AIAssistant({
             type="text"
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
-            placeholder={account ? 'Ask about this page…' : 'Sign in to use AI'}
-            disabled={isLoading || !account}
+            placeholder="Ask about this page…"
+            disabled={isLoading}
             maxLength={4000}
             className="w-full pl-4 pr-11 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs sm:text-sm focus:border-indigo-500 disabled:opacity-60"
           />
-          <button type="submit" disabled={!prompt.trim() || isLoading || !account} className="absolute right-2 p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30" aria-label="Send question"><Send size={18} /></button>
+          <button type="submit" disabled={!prompt.trim() || isLoading} className="absolute right-2 p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30" aria-label="Send question"><Send size={18} /></button>
         </form>
       </div>
 
