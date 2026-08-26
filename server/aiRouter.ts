@@ -4,15 +4,25 @@ export type AIHistoryItem = { prompt: string; response: string };
 export type AIRequest = { prompt: string; pageNumber: number; pageText?: string; pageImage?: string; history?: AIHistoryItem[] };
 type AIResult = { text: string; provider: 'cloudflare' | 'gemini' | 'local'; model: string };
 
-const SYSTEM_PROMPT = `You are a careful study assistant. Answer using the supplied PDF page context. If the context does not contain the answer, say so clearly. Explain concepts in plain language, use concise markdown with short sections and bullets, and cite the supplied PDF page number when referring to evidence.`;
-const TEXT_MODELS = ['@cf/meta/llama-3.2-3b-instruct', '@cf/meta/llama-3.1-8b-instruct-fast'];
-const VISION_MODEL = '@cf/meta/llama-3.2-11b-vision-instruct';
+const SYSTEM_PROMPT = `You are a careful, capable study assistant. Answer only from the supplied PDF page context. If the page does not contain the answer, say so clearly. Preserve important names, numbers, formulas, and qualifications. Explain concepts in plain language, organize longer answers with short headings and bullets, and cite the supplied PDF page number when referring to evidence. Match the student's requested language.`;
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+const TEXT_MODELS = [
+  '@cf/qwen/qwen3-30b-a3b-fp8',
+  '@cf/meta/llama-3.2-3b-instruct',
+  '@cf/meta/llama-3.1-8b-instruct-fast',
+];
+const VISION_MODELS = [
+  '@cf/meta/llama-4-scout-17b-16e-instruct',
+  '@cf/meta/llama-3.2-11b-vision-instruct',
+];
+const modelCooldowns = new Map<string, number>();
+const CAPACITY_COOLDOWN_MS = 90_000;
 
 export async function routeAIRequest(request: AIRequest): Promise<AIResult> {
   const runners: Array<() => Promise<AIResult>> = [];
+  if (env.GEMINI_API_KEY) runners.push(() => runGemini(request));
   if (env.AI) runners.push(() => runCloudflare(request));
   if (!env.AI && env.CLOUDFLARE_AI_ENDPOINT) runners.push(() => runRemoteCloudflare(request));
-  if (env.GEMINI_API_KEY) runners.push(() => runGemini(request));
 
   for (const run of runners) {
     try {
@@ -38,13 +48,15 @@ async function runRemoteCloudflare(request: AIRequest): Promise<AIResult> {
 
 async function runCloudflare(request: AIRequest): Promise<AIResult> {
   const configuredModels = modelList(env.CLOUDFLARE_AI_MODEL, TEXT_MODELS);
-  const models = request.pageImage ? [VISION_MODEL, ...configuredModels] : configuredModels;
+  const models = request.pageImage ? [...VISION_MODELS, ...configuredModels] : configuredModels;
   let lastError: unknown;
 
   for (const model of [...new Set(models)]) {
+    const cooldownKey = `cloudflare:${model}`;
+    if (isCoolingDown(cooldownKey)) continue;
     try {
       const text = buildContext(request);
-      const userContent = request.pageImage && model === VISION_MODEL
+      const userContent = request.pageImage && VISION_MODELS.includes(model)
         ? [{ type: 'text', text }, { type: 'image_url', image_url: { url: request.pageImage } }]
         : text;
       const output = await env.AI!.run(model as Parameters<Ai['run']>[0], {
@@ -57,6 +69,7 @@ async function runCloudflare(request: AIRequest): Promise<AIResult> {
       return { text: response, provider: 'cloudflare', model };
     } catch (error) {
       lastError = error;
+      applyCapacityCooldown(cooldownKey, error);
     }
   }
 
@@ -64,22 +77,41 @@ async function runCloudflare(request: AIRequest): Promise<AIResult> {
 }
 
 async function runGemini(request: AIRequest): Promise<AIResult> {
-  const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const parts: Array<Record<string, unknown>> = [{ text: buildContext(request) }];
-  if (request.pageImage) {
-    const [metadata, data] = request.pageImage.split(',');
-    const mimeType = metadata?.match(/data:(.*?);base64/)?.[1] || 'image/jpeg';
-    parts.unshift({ inlineData: { mimeType, data: data || request.pageImage } });
+  const configured = env.GEMINI_MODELS || env.GEMINI_MODEL;
+  const models = [...new Set([...modelList(configured, []), ...GEMINI_MODELS])];
+  const providerDeadline = Date.now() + 10_000;
+  let lastError: unknown;
+
+  for (const model of models) {
+    const cooldownKey = `gemini:${model}`;
+    if (isCoolingDown(cooldownKey)) continue;
+    try {
+      const parts: Array<Record<string, unknown>> = [{ text: `${SYSTEM_PROMPT}\n\n${buildContext(request)}` }];
+      if (request.pageImage) {
+        const [metadata, data] = request.pageImage.split(',');
+        const mimeType = metadata?.match(/data:(.*?);base64/)?.[1] || 'image/jpeg';
+        parts.unshift({ inlineData: { mimeType, data: data || request.pageImage } });
+      }
+      const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY!)}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts }],
+          generationConfig: { maxOutputTokens: 900, temperature: 0.2 },
+        }),
+      }, Math.max(2_500, Math.min(6_500, providerDeadline - Date.now())));
+      if (!response.ok) throw new Error(`GEMINI_${response.status}`);
+      const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+      const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('').trim();
+      if (!text) throw new Error('AI_EMPTY_RESPONSE');
+      return { text, provider: 'gemini', model };
+    } catch (error) {
+      lastError = error;
+      applyCapacityCooldown(cooldownKey, error);
+    }
   }
-  const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY!)}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { maxOutputTokens: 700, temperature: 0.2 } }),
-  });
-  if (!response.ok) throw new Error(`GEMINI_${response.status}`);
-  const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-  const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('').trim();
-  if (!text) throw new Error('AI_EMPTY_RESPONSE');
-  return { text, provider: 'gemini', model };
+
+  throw lastError || new Error('GEMINI_UNAVAILABLE');
 }
 
 function runLocalPageAnswer(request: AIRequest): AIResult {
@@ -141,6 +173,22 @@ function buildContext(request: AIRequest) {
 function modelList(value: string | undefined, defaults: string[]) {
   const models = value?.split(',').map((model) => model.trim()).filter(Boolean);
   return models?.length ? models : defaults;
+}
+
+function isCoolingDown(key: string) {
+  const until = modelCooldowns.get(key) || 0;
+  if (until <= Date.now()) {
+    modelCooldowns.delete(key);
+    return false;
+  }
+  return true;
+}
+
+function applyCapacityCooldown(key: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/429|quota|capacity|resource[_ ]?exhausted|daily allocation|3036/i.test(message)) {
+    modelCooldowns.set(key, Date.now() + CAPACITY_COOLDOWN_MS);
+  }
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 12_000) {

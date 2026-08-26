@@ -89,7 +89,7 @@ export function AIAssistant({
           <Sparkles size={18} className="text-indigo-600 shrink-0" />
           <h3 className="font-medium text-slate-800 text-sm truncate">AI Page Assistant</h3>
         </div>
-        <span className="text-xs font-medium text-emerald-700 whitespace-nowrap">Free access</span>
+        <span className="text-xs font-medium text-slate-500 whitespace-nowrap">Page-aware</span>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
@@ -97,7 +97,7 @@ export function AIAssistant({
           <div className="py-8 text-center">
             <Sparkles size={24} className="mx-auto text-indigo-500" />
             <p className="mt-3 font-medium text-slate-700 text-sm">Ask about page {pageNumber}</p>
-            <p className="text-xs text-slate-500 mt-1">The selected page context is sent to Cloudflare Workers AI, with Gemini used only when configured as a fallback.</p>
+            <p className="text-xs text-slate-500 mt-1">Answers are grounded in this page's text and optional page image.</p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
               {quickPrompts.map((item) => (
                 <button key={item} type="button" onClick={() => handleAsk(item)} className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-700 hover:border-indigo-300 hover:text-indigo-700">{item}</button>

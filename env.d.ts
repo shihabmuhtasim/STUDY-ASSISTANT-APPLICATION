@@ -6,5 +6,6 @@ declare namespace Cloudflare {
     CLOUDFLARE_AI_ENDPOINT?: string;
     GEMINI_API_KEY?: string;
     GEMINI_MODEL?: string;
+    GEMINI_MODELS?: string;
   }
 }

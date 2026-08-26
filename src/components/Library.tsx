@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { BookOpen, ChevronRight, Clock, FileText, Pencil, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
+import { BookOpen, ChevronRight, Clock, FileText, Pencil, Search, Trash2, Upload, X } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { AccountIdentity, AccountSummary, StudyDocument } from '../types';
 
@@ -72,23 +72,21 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
   return (
     <main className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <span className="w-9 h-9 rounded-lg bg-indigo-600 text-white grid place-items-center shrink-0"><BookOpen size={19} /></span>
             <div className="min-w-0">
               <p className="font-semibold text-slate-900 leading-tight">Study Assistant</p>
-              <p className="text-xs text-slate-500 truncate">Free public workspace</p>
+              <p className="text-xs text-slate-500 truncate">PDF study workspace</p>
             </div>
           </div>
-
-          <span className="inline-flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700"><Sparkles size={16} />Free AI</span>
         </div>
       </header>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-        <section className="mb-8">
+        <section className="mb-8 max-w-3xl border-l-4 border-indigo-600 pl-5 sm:pl-6 py-1">
           <h1 className="text-2xl sm:text-3xl font-semibold text-slate-950">Your study library</h1>
-          <p className="mt-2 text-sm sm:text-base text-slate-600 max-w-2xl">Open a PDF beside page-linked notes and ask the assistant about the exact page you are reading.</p>
+          <p className="mt-2 text-sm sm:text-base leading-relaxed text-slate-600">Turn every PDF into a focused study space. Read the page, build notes that stay connected to it, and ask the assistant questions without losing your place.</p>
         </section>
 
         {error && (
