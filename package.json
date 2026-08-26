@@ -8,6 +8,8 @@
     "build": "vinext build",
     "start": "vinext start",
     "deploy:cloudflare": "npm run build && vinext-cloudflare deploy --config dist/server/wrangler.json --skip-build",
+    "prepare:pages": "node scripts/prepare-pages-deploy.mjs",
+    "deploy:pages": "npm run build && npm run prepare:pages && wrangler pages deploy dist/pages --project-name ai-pdf-study-assistant --branch main",
     "lint": "tsc --noEmit",
     "db:generate": "drizzle-kit generate"
   },
