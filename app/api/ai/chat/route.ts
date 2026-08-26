@@ -13,8 +13,8 @@ export async function POST(request: Request) {
   if (body.pageImage && body.pageImage.length > 4_000_000) return NextResponse.json({ error: 'The page preview is too large. Turn off visual analysis and try again.' }, { status: 413 });
 
   try {
-    const result = await routeAIRequest({ prompt, pageNumber: body.pageNumber, pageText: body.pageText?.slice(0, 12_000), pageImage: body.pageImage, history: body.history?.slice(-3) });
-    return NextResponse.json({ response: result.text, provider: result.provider, model: result.model }, { headers: { 'cache-control': 'no-store' } });
+    const result = await routeAIRequest({ prompt, pageNumber: body.pageNumber, pageText: body.pageText?.slice(0, 12_000), pageImage: body.pageImage, history: body.history?.slice(-3), modelPreference: body.modelPreference, allowFallback: body.allowFallback });
+    return NextResponse.json({ response: result.text, provider: result.provider, model: result.model, requestedModel: result.requestedModel, fallbackUsed: result.fallbackUsed }, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     const code = error instanceof Error ? error.message : 'AI_UNAVAILABLE';
     console.error('AI request failed', error);

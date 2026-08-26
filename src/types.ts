@@ -53,7 +53,13 @@ export interface AIInteraction {
   response: string;
   createdAt: number;
   insertedIntoNotes: boolean;
+  provider?: 'cloudflare' | 'gemini' | 'local';
+  model?: string;
+  requestedModel?: AIModelPreference;
+  fallbackUsed?: boolean;
 }
+
+export type AIModelPreference = 'auto' | 'gemini-flash' | 'gemini-flash-lite' | 'qwen' | 'llama';
 
 export interface AccountIdentity {
   userId: string;

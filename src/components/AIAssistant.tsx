@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Copy, Image as ImageIcon, Loader2, Plus, Send, Sparkles } from 'lucide-react';
-import { AccountIdentity, AccountSummary, AIInteraction } from '../types';
+import { Bot, Check, Copy, Image as ImageIcon, Loader2, Plus, Send, Sparkles } from 'lucide-react';
+import { AccountIdentity, AccountSummary, AIInteraction, AIModelPreference } from '../types';
 import { AIRequestError, askAIAboutPage } from '../services/ai';
 import { v4 as uuidv4 } from 'uuid';
 import Markdown from 'react-markdown';
@@ -18,6 +18,22 @@ interface AIAssistantProps {
 }
 
 const quickPrompts = ['Summarize this page', 'Explain the key ideas', 'Create 3 quiz questions'];
+const modelOptions: Array<{ value: AIModelPreference; label: string }> = [
+  { value: 'auto', label: 'Auto · Best available' },
+  { value: 'gemini-flash', label: 'Gemini 3.6 Flash' },
+  { value: 'gemini-flash-lite', label: 'Gemini 3.5 Flash-Lite' },
+  { value: 'qwen', label: 'Qwen 3' },
+  { value: 'llama', label: 'Llama 3.2' },
+];
+
+function displayModel(model: string) {
+  if (model === 'gemini-3.6-flash') return 'Gemini 3.6 Flash';
+  if (model === 'gemini-3.5-flash-lite') return 'Gemini 3.5 Flash-Lite';
+  if (model.includes('qwen')) return 'Qwen 3';
+  if (model.includes('llama')) return 'Llama';
+  if (model === 'page-text-fallback') return 'Page text';
+  return model;
+}
 
 export function AIAssistant({
   pageNumber,
@@ -32,7 +48,23 @@ export function AIAssistant({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [includeImage, setIncludeImage] = useState(false);
+  const [modelPreference, setModelPreference] = useState<AIModelPreference>('auto');
+  const [allowFallback, setAllowFallback] = useState(true);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [insertModalState, setInsertModalState] = useState({ isOpen: false, promptQuestion: '', aiResponse: '' });
+
+  useEffect(() => {
+    const savedModel = window.localStorage.getItem('study-assistant-model') as AIModelPreference | null;
+    if (savedModel && modelOptions.some((option) => option.value === savedModel)) setModelPreference(savedModel);
+    setAllowFallback(window.localStorage.getItem('study-assistant-fallback') !== 'false');
+    setPreferencesLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!preferencesLoaded) return;
+    window.localStorage.setItem('study-assistant-model', modelPreference);
+    window.localStorage.setItem('study-assistant-fallback', String(allowFallback));
+  }, [modelPreference, allowFallback, preferencesLoaded]);
 
   useEffect(() => {
     setIncludeImage(!pageText.trim());
@@ -56,6 +88,8 @@ export function AIAssistant({
         pageText,
         pageImage: includeImage ? pageImage || undefined : undefined,
         history,
+        modelPreference,
+        allowFallback,
       });
       onAddInteraction({
         id: uuidv4(),
@@ -63,6 +97,10 @@ export function AIAssistant({
         response: result.response,
         createdAt: Date.now(),
         insertedIntoNotes: false,
+        provider: result.provider,
+        model: result.model,
+        requestedModel: result.requestedModel,
+        fallbackUsed: result.fallbackUsed,
       });
     } catch (requestError) {
       if (requestError instanceof AIRequestError) setError(requestError.message);
@@ -110,6 +148,7 @@ export function AIAssistant({
               <div className="flex justify-end"><div className="bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-medium max-w-[85%]">{item.prompt}</div></div>
               <div className="bg-indigo-50/70 text-indigo-950 px-4 py-3 rounded-lg text-sm border border-indigo-100 space-y-3">
                 <div className="prose prose-sm prose-slate max-w-none leading-relaxed"><Markdown>{item.response}</Markdown></div>
+                {item.model && <div className="flex items-center gap-1.5 text-[11px] text-indigo-700"><Bot size={13} />Answered by {displayModel(item.model)}{item.fallbackUsed ? ' · automatic fallback' : ''}</div>}
                 <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-indigo-100">
                   <button type="button" onClick={() => setInsertModalState({ isOpen: true, promptQuestion: item.prompt, aiResponse: item.response })} className="flex items-center gap-1.5 text-xs font-medium text-indigo-700 bg-white hover:bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-indigo-200"><Plus size={14} />Insert to notes</button>
                   <button type="button" onClick={() => handleCopy(item.id, item.response)} className="flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200">
@@ -126,6 +165,19 @@ export function AIAssistant({
 
       <div className="p-3 border-t border-slate-100 bg-white shrink-0">
         {error && <p role="alert" className="mb-2 text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <label className="flex items-center gap-2 text-xs text-slate-600">
+            <Bot size={14} className="text-indigo-600" />
+            <span className="sr-only">AI model</span>
+            <select value={modelPreference} onChange={(event) => setModelPreference(event.target.value as AIModelPreference)} className="max-w-48 bg-white border border-slate-200 rounded-md px-2 py-1.5 text-xs text-slate-700 focus:border-indigo-500">
+              {modelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+            <input type="checkbox" checked={allowFallback} onChange={(event) => setAllowFallback(event.target.checked)} className="accent-indigo-600" />
+            Auto fallback
+          </label>
+        </div>
         <div className="flex items-center justify-between gap-2 mb-2">
           <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
             <input type="checkbox" checked={includeImage} onChange={(event) => setIncludeImage(event.target.checked)} disabled={!pageImage} className="accent-indigo-600" />

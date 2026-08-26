@@ -1,8 +1,9 @@
 import { env } from 'cloudflare:workers';
 
 export type AIHistoryItem = { prompt: string; response: string };
-export type AIRequest = { prompt: string; pageNumber: number; pageText?: string; pageImage?: string; history?: AIHistoryItem[] };
-type AIResult = { text: string; provider: 'cloudflare' | 'gemini' | 'local'; model: string };
+export type AIModelPreference = 'auto' | 'gemini-flash' | 'gemini-flash-lite' | 'qwen' | 'llama';
+export type AIRequest = { prompt: string; pageNumber: number; pageText?: string; pageImage?: string; history?: AIHistoryItem[]; modelPreference?: AIModelPreference; allowFallback?: boolean };
+type AIResult = { text: string; provider: 'cloudflare' | 'gemini' | 'local'; model: string; requestedModel?: AIModelPreference; fallbackUsed?: boolean };
 
 const SYSTEM_PROMPT = `You are a careful, capable study assistant. Answer only from the supplied PDF page context. If the page does not contain the answer, say so clearly. Preserve important names, numbers, formulas, and qualifications. Explain concepts in plain language, organize longer answers with short headings and bullets, and cite the supplied PDF page number when referring to evidence. Match the student's requested language.`;
 const GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash-lite'];
@@ -17,22 +18,43 @@ const VISION_MODELS = [
 ];
 const modelCooldowns = new Map<string, number>();
 const CAPACITY_COOLDOWN_MS = 90_000;
+const MODEL_TARGETS: Record<Exclude<AIModelPreference, 'auto'>, { provider: 'gemini' | 'cloudflare'; model: string }> = {
+  'gemini-flash': { provider: 'gemini', model: GEMINI_MODELS[0] },
+  'gemini-flash-lite': { provider: 'gemini', model: GEMINI_MODELS[1] },
+  qwen: { provider: 'cloudflare', model: TEXT_MODELS[0] },
+  llama: { provider: 'cloudflare', model: TEXT_MODELS[1] },
+};
 
 export async function routeAIRequest(request: AIRequest): Promise<AIResult> {
+  const preference = normalizePreference(request.modelPreference);
+  const preferredTarget = preference === 'auto' ? null : MODEL_TARGETS[preference];
   const runners: Array<() => Promise<AIResult>> = [];
-  if (env.GEMINI_API_KEY) runners.push(() => runGemini(request));
-  if (env.AI) runners.push(() => runCloudflare(request));
-  if (!env.AI && env.CLOUDFLARE_AI_ENDPOINT) runners.push(() => runRemoteCloudflare(request));
+
+  if (preferredTarget?.provider === 'gemini' && env.GEMINI_API_KEY) runners.push(() => runGemini(request, [preferredTarget.model]));
+  if (preferredTarget?.provider === 'cloudflare' && env.AI) runners.push(() => runCloudflare(request, [preferredTarget.model]));
+
+  if (preference === 'auto' || request.allowFallback !== false) {
+    const remainingGemini = GEMINI_MODELS.filter((model) => model !== preferredTarget?.model);
+    const remainingCloudflare = TEXT_MODELS.filter((model) => model !== preferredTarget?.model);
+    if (env.GEMINI_API_KEY && remainingGemini.length) runners.push(() => runGemini(request, remainingGemini));
+    if (env.AI) runners.push(() => runCloudflare(request, remainingCloudflare));
+    if (!env.AI && env.CLOUDFLARE_AI_ENDPOINT) runners.push(() => runRemoteCloudflare(request));
+  }
 
   for (const run of runners) {
     try {
-      return await run();
+      const result = await run();
+      return {
+        ...result,
+        requestedModel: preference,
+        fallbackUsed: Boolean(preferredTarget && result.model !== preferredTarget.model),
+      };
     } catch (error) {
       console.error('AI provider failed; trying fallback', error);
     }
   }
 
-  return runLocalPageAnswer(request);
+  return { ...runLocalPageAnswer(request), requestedModel: preference, fallbackUsed: preference !== 'auto' };
 }
 
 async function runRemoteCloudflare(request: AIRequest): Promise<AIResult> {
@@ -46,9 +68,9 @@ async function runRemoteCloudflare(request: AIRequest): Promise<AIResult> {
   return { text: data.response, provider: data.provider || 'cloudflare', model: data.model || TEXT_MODELS[0] };
 }
 
-async function runCloudflare(request: AIRequest): Promise<AIResult> {
-  const configuredModels = modelList(env.CLOUDFLARE_AI_MODEL, TEXT_MODELS);
-  const models = request.pageImage ? [...VISION_MODELS, ...configuredModels] : configuredModels;
+async function runCloudflare(request: AIRequest, requestedModels?: string[]): Promise<AIResult> {
+  const configuredModels = requestedModels?.length ? requestedModels : modelList(env.CLOUDFLARE_AI_MODEL, TEXT_MODELS);
+  const models = requestedModels?.length ? configuredModels : request.pageImage ? [...VISION_MODELS, ...configuredModels] : configuredModels;
   let lastError: unknown;
 
   for (const model of [...new Set(models)]) {
@@ -76,9 +98,9 @@ async function runCloudflare(request: AIRequest): Promise<AIResult> {
   throw lastError || new Error('CLOUDFLARE_UNAVAILABLE');
 }
 
-async function runGemini(request: AIRequest): Promise<AIResult> {
+async function runGemini(request: AIRequest, requestedModels?: string[]): Promise<AIResult> {
   const configured = env.GEMINI_MODELS || env.GEMINI_MODEL;
-  const models = [...new Set([...modelList(configured, []), ...GEMINI_MODELS])];
+  const models = requestedModels?.length ? requestedModels : [...new Set([...modelList(configured, []), ...GEMINI_MODELS])];
   const providerDeadline = Date.now() + 10_000;
   let lastError: unknown;
 
@@ -176,6 +198,10 @@ function buildContext(request: AIRequest) {
 function modelList(value: string | undefined, defaults: string[]) {
   const models = value?.split(',').map((model) => model.trim()).filter(Boolean);
   return models?.length ? models : defaults;
+}
+
+function normalizePreference(value: AIModelPreference | undefined): AIModelPreference {
+  return value && (value === 'auto' || value in MODEL_TARGETS) ? value : 'auto';
 }
 
 function isCoolingDown(key: string) {
