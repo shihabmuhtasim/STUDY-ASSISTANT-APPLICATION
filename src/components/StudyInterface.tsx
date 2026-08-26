@@ -8,6 +8,7 @@ import { ArrowLeft, Download, BookOpen, GripVertical, GripHorizontal, FileText, 
 import { get, set } from 'idb-keyval';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { exportStudyPackPDF } from '../utils/pdfExport';
+import { markdownToRichTextHtml } from './RichTextEditor';
 
 interface StudyInterfaceProps {
   document: StudyDocument;
@@ -125,7 +126,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     const newBlock: NoteBlock = {
       id: uuidv4(),
       question: questionHeader,
-      content: editedText,
+      content: markdownToRichTextHtml(editedText),
       createdAt: Date.now(),
       isAiGenerated: true,
     };

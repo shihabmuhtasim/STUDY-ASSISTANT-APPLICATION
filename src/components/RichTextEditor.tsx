@@ -19,6 +19,62 @@ export function toRichTextHtml(value: string) {
   return DOMPurify.sanitize(escaped);
 }
 
+export function markdownToRichTextHtml(value: string) {
+  if (!value) return '';
+
+  const inline = (text: string) => text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/__(.+?)__/g, '<strong>$1</strong>')
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/_(.+?)_/g, '<em>$1</em>');
+
+  const lines = value.replace(/\r\n?/g, '\n').split('\n');
+  const html: string[] = [];
+  let listType: 'ul' | 'ol' | null = null;
+
+  const closeList = () => {
+    if (listType) html.push(`</${listType}>`);
+    listType = null;
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const unordered = trimmed.match(/^[-*+]\s+(.+)/);
+    const ordered = trimmed.match(/^\d+\.\s+(.+)/);
+
+    if (unordered || ordered) {
+      const nextType = unordered ? 'ul' : 'ol';
+      if (listType !== nextType) {
+        closeList();
+        listType = nextType;
+        html.push(`<${nextType}>`);
+      }
+      html.push(`<li>${inline((unordered || ordered)![1])}</li>`);
+      continue;
+    }
+
+    closeList();
+    if (!trimmed) {
+      html.push('<br>');
+    } else if (/^###\s+/.test(trimmed)) {
+      html.push(`<h3>${inline(trimmed.replace(/^###\s+/, ''))}</h3>`);
+    } else if (/^##\s+/.test(trimmed)) {
+      html.push(`<h2>${inline(trimmed.replace(/^##\s+/, ''))}</h2>`);
+    } else if (/^#\s+/.test(trimmed)) {
+      html.push(`<h1>${inline(trimmed.replace(/^#\s+/, ''))}</h1>`);
+    } else if (!/^---+$/.test(trimmed)) {
+      html.push(`<p>${inline(trimmed)}</p>`);
+    }
+  }
+
+  closeList();
+  return DOMPurify.sanitize(html.join(''));
+}
+
 export function richTextToPlainText(value: string) {
   const element = document.createElement('div');
   element.innerHTML = DOMPurify.sanitize(value);
@@ -51,19 +107,24 @@ export function RichTextEditor({ value, onChange, minHeight = 150 }: RichTextEdi
       selection?.removeAllRanges();
       selection?.addRange(savedRange.current);
     }
+    document.execCommand('styleWithCSS', false, 'false');
     document.execCommand(command, false, commandValue);
     rememberSelection();
     onChange(editor.innerHTML);
   };
 
   const iconButton = 'p-1.5 rounded text-slate-600 hover:bg-white hover:text-emerald-700';
+  const runFromToolbar = (event: React.MouseEvent<HTMLButtonElement>, command: string, commandValue?: string) => {
+    event.preventDefault();
+    runCommand(command, commandValue);
+  };
 
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/15">
       <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-slate-50 p-1.5">
-        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runCommand('bold')} className={iconButton} title="Bold"><Bold size={15} /></button>
-        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runCommand('italic')} className={iconButton} title="Italic"><Italic size={15} /></button>
-        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runCommand('underline')} className={iconButton} title="Underline"><Underline size={15} /></button>
+        <button type="button" onMouseDown={(event) => runFromToolbar(event, 'bold')} className={iconButton} title="Bold"><Bold size={15} /></button>
+        <button type="button" onMouseDown={(event) => runFromToolbar(event, 'italic')} className={iconButton} title="Italic"><Italic size={15} /></button>
+        <button type="button" onMouseDown={(event) => runFromToolbar(event, 'underline')} className={iconButton} title="Underline"><Underline size={15} /></button>
         <span className="mx-1 h-5 w-px bg-slate-200" />
         <select aria-label="Font" defaultValue="Arial" onChange={(event) => runCommand('fontName', event.target.value)} className="h-7 rounded border border-slate-200 bg-white px-2 text-xs text-slate-700">
           <option value="Arial">Arial</option>
@@ -78,10 +139,10 @@ export function RichTextEditor({ value, onChange, minHeight = 150 }: RichTextEdi
         <label className="flex h-7 items-center gap-1 rounded border border-slate-200 bg-white px-1.5 text-[11px] text-slate-600" title="Text color">
           Text <input aria-label="Text color" type="color" defaultValue="#1e293b" onChange={(event) => runCommand('foreColor', event.target.value)} className="h-4 w-5 border-0 bg-transparent p-0" />
         </label>
-        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runCommand('backColor', '#fef08a')} className={iconButton} title="Highlight"><Highlighter size={15} /></button>
+        <button type="button" onMouseDown={(event) => runFromToolbar(event, 'backColor', '#fef08a')} className={iconButton} title="Highlight"><Highlighter size={15} /></button>
         <span className="mx-1 h-5 w-px bg-slate-200" />
-        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runCommand('insertUnorderedList')} className={iconButton} title="Bulleted list"><List size={15} /></button>
-        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runCommand('insertOrderedList')} className={iconButton} title="Numbered list"><ListOrdered size={15} /></button>
+        <button type="button" onMouseDown={(event) => runFromToolbar(event, 'insertUnorderedList')} className={iconButton} title="Bulleted list"><List size={15} /></button>
+        <button type="button" onMouseDown={(event) => runFromToolbar(event, 'insertOrderedList')} className={iconButton} title="Numbered list"><ListOrdered size={15} /></button>
       </div>
       <div
         ref={editorRef}

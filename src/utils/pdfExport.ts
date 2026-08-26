@@ -7,13 +7,35 @@ interface CleanLine {
   raw: string;
 }
 
+function richContentToStructuredText(value: string): string {
+  if (!value) return '';
+
+  const withStructure = value
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<h1\b[^>]*>/gi, '\n# ')
+    .replace(/<h2\b[^>]*>/gi, '\n## ')
+    .replace(/<h3\b[^>]*>/gi, '\n### ')
+    .replace(/<li\b[^>]*>/gi, '\n- ')
+    .replace(/<\/(?:h1|h2|h3|li|p|div|ul|ol)>/gi, '\n');
+
+  const parsed = new DOMParser().parseFromString(withStructure, 'text/html');
+  return (parsed.body.textContent || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 /**
   Parse markdown string into structured text lines for jsPDF rendering
  */
 export function parseMarkdownToCleanLines(text: string): CleanLine[] {
   if (!text) return [];
-  
-  const rawLines = text.split('\n');
+
+  const rawLines = richContentToStructuredText(text).split('\n');
   const cleanLines: CleanLine[] = [];
 
   for (let line of rawLines) {
@@ -69,7 +91,7 @@ export function parseMarkdownToCleanLines(text: string): CleanLine[] {
  */
 export function stripMarkdown(text: string): string {
   if (!text) return '';
-  return text
+  return richContentToStructuredText(text)
     .replace(/\*\*\*(.*?)\*\*\*/g, '$1')
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
