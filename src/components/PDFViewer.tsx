@@ -1,27 +1,37 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2, RotateCcw } from 'lucide-react';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { ChevronLeft, ChevronRight, Loader2, RotateCcw, Search, X, ZoomIn, ZoomOut } from 'lucide-react';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
 interface PDFViewerProps {
   file: string;
   pageNumber: number;
   setPageNumber: (page: number) => void;
   onPageRenderSuccess: (base64Image: string) => void;
+  onPageTextReady: (text: string) => void;
+  onDocumentLoaded: (totalPages: number) => void;
 }
 
-export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess }: PDFViewerProps) {
+export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess, onPageTextReady, onDocumentLoaded }: PDFViewerProps) {
   const [numPages, setNumPages] = useState<number | null>(null);
+  const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [scale, setScale] = useState(1.0);
   const [inputPage, setInputPage] = useState('1');
   const [isPanning, setIsPanning] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0, scrollLeft: 0, scrollTop: 0 });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<number[]>([]);
+  const [activeSearchResult, setActiveSearchResult] = useState(-1);
+  const [isSearching, setIsSearching] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const pageRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const textCache = useRef(new Map<number, string>());
 
   useEffect(() => {
     setInputPage(pageNumber.toString());
@@ -46,15 +56,47 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [pageNumber, numPages, setPageNumber]);
 
-  function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
-    setNumPages(numPages);
+  const extractPageText = useCallback(async (page: number) => {
+    if (!pdfDocument) return '';
+    const cached = textCache.current.get(page);
+    if (cached !== undefined) return cached;
+    const pdfPage = await pdfDocument.getPage(page);
+    const content = await pdfPage.getTextContent();
+    const text = content.items
+      .map((item) => ('str' in item ? item.str : ''))
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    textCache.current.set(page, text);
+    return text;
+  }, [pdfDocument]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!pdfDocument) return;
+    onPageTextReady('');
+    extractPageText(pageNumber)
+      .then((text) => { if (!cancelled) onPageTextReady(text); })
+      .catch((error) => {
+        console.error('Failed to extract page text', error);
+        if (!cancelled) onPageTextReady('');
+      });
+    return () => { cancelled = true; };
+  }, [extractPageText, onPageTextReady, pageNumber, pdfDocument]);
+
+  function onDocumentLoadSuccess(pdf: PDFDocumentProxy) {
+    setPdfDocument(pdf);
+    setNumPages(pdf.numPages);
+    setLoadError(null);
+    textCache.current.clear();
+    onDocumentLoaded(pdf.numPages);
   }
 
   function handleRenderSuccess() {
     if (pageRef.current) {
       const canvas = pageRef.current.querySelector('canvas');
       if (canvas) {
-        const dataUrl = canvas.toDataURL('image/png');
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.78);
         onPageRenderSuccess(dataUrl);
       }
     }
@@ -71,6 +113,35 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
   };
 
   const resetZoom = () => setScale(1.0);
+
+  const runSearch = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const normalized = searchQuery.trim().toLowerCase();
+    if (!normalized || !pdfDocument) return;
+    setIsSearching(true);
+    try {
+      const matches: number[] = [];
+      for (let page = 1; page <= pdfDocument.numPages; page += 1) {
+        const text = await extractPageText(page);
+        if (text.toLowerCase().includes(normalized)) matches.push(page);
+      }
+      setSearchResults(matches);
+      setActiveSearchResult(matches.length > 0 ? 0 : -1);
+      if (matches.length > 0) setPageNumber(matches[0]);
+    } catch (error) {
+      console.error('Document search failed', error);
+      setLoadError('Search could not finish for this document.');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const moveSearchResult = (direction: -1 | 1) => {
+    if (searchResults.length === 0) return;
+    const next = (activeSearchResult + direction + searchResults.length) % searchResults.length;
+    setActiveSearchResult(next);
+    setPageNumber(searchResults[next]);
+  };
 
   // Mouse Drag-to-Pan Handlers
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -101,7 +172,7 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-100/80 rounded-xl overflow-hidden border border-slate-200 shadow-2xs select-none">
+    <div className="flex flex-col h-full bg-slate-100/80 rounded-lg overflow-hidden border border-slate-200 shadow-2xs select-none">
       {/* Top Toolbar */}
       <div className="flex flex-wrap items-center justify-between p-2 bg-white border-b border-slate-200 shadow-2xs z-10 gap-2 shrink-0">
         {/* Page Controls */}
@@ -190,7 +261,34 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
             <RotateCcw size={15} />
           </button>
         </div>
+
+        <form onSubmit={runSearch} className="order-last sm:order-none w-full sm:w-auto flex items-center gap-1">
+          <label className="relative flex-1 sm:w-44">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+                if (!event.target.value) { setSearchResults([]); setActiveSearchResult(-1); }
+              }}
+              placeholder="Search PDF"
+              className="w-full pl-8 pr-7 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:border-indigo-500"
+            />
+            {isSearching ? <Loader2 size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-indigo-500" /> : searchQuery && <button type="button" onClick={() => { setSearchQuery(''); setSearchResults([]); setActiveSearchResult(-1); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" aria-label="Clear PDF search"><X size={14} /></button>}
+          </label>
+          {searchResults.length > 0 && (
+            <div className="flex items-center gap-0.5 text-[11px] text-slate-500 whitespace-nowrap">
+              <button type="button" onClick={() => moveSearchResult(-1)} className="p-1 hover:bg-slate-100 rounded" aria-label="Previous search result"><ChevronLeft size={14} /></button>
+              {activeSearchResult + 1}/{searchResults.length}
+              <button type="button" onClick={() => moveSearchResult(1)} className="p-1 hover:bg-slate-100 rounded" aria-label="Next search result"><ChevronRight size={14} /></button>
+            </div>
+          )}
+          {searchQuery && !isSearching && activeSearchResult === -1 && searchResults.length === 0 && <span className="text-[11px] text-slate-400 whitespace-nowrap">No matches</span>}
+        </form>
       </div>
+
+      {loadError && <div role="alert" className="px-3 py-2 bg-red-50 border-b border-red-100 text-xs text-red-700">{loadError}</div>}
 
       {/* Canvas Display Viewport with Click-and-Drag Pan */}
       <div
@@ -214,6 +312,7 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
           <Document
             file={file}
             onLoadSuccess={onDocumentLoadSuccess}
+            onLoadError={(error) => { console.error('PDF load failed', error); setLoadError('This PDF could not be opened. It may be damaged or password protected.'); }}
             loading={
               <div className="flex items-center justify-center h-80 text-slate-500 text-sm font-medium">
                 Loading document pages...

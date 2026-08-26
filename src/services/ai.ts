@@ -1,32 +1,39 @@
-import { GoogleGenAI } from "@google/genai";
+import type { AIInteraction } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-export async function askGeminiAboutPage(
-  prompt: string,
-  base64Image: string,
-  mimeType: string = "image/png"
-): Promise<string> {
-  try {
-    const imagePart = {
-      inlineData: {
-        data: base64Image.split(",")[1] || base64Image, // Remove data URI prefix if present
-        mimeType,
-      },
-    };
-    const textPart = { text: prompt };
-
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: { parts: [imagePart, textPart] },
-      config: {
-        systemInstruction: "You are an expert study assistant helping a student understand lecture slides and notes. You analyze the provided page image and answer the student's questions concisely and clearly. Format your output in markdown, using bullet points, short sections, and definitions where appropriate. Do not write overly long paragraphs unless explicitly requested.",
-      }
-    });
-
-    return response.text || "No response generated.";
-  } catch (error) {
-    console.error("Error calling Gemini API:", error);
-    throw new Error("Failed to get response from AI. Please try again.");
+export class AIRequestError extends Error {
+  constructor(message: string, public code?: string, public status?: number) {
+    super(message);
   }
+}
+
+export async function askAIAboutPage(input: {
+  prompt: string;
+  pageNumber: number;
+  pageText: string;
+  pageImage?: string;
+  history: AIInteraction[];
+}): Promise<{ response: string; remaining?: number }> {
+  const response = await fetch('/api/ai/chat', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      prompt: input.prompt,
+      pageNumber: input.pageNumber,
+      pageText: input.pageText,
+      pageImage: input.pageImage,
+      history: input.history.slice(-4).map((item) => ({ prompt: item.prompt, response: item.response })),
+    }),
+  });
+
+  const data = await response.json() as {
+    response?: string;
+    error?: string;
+    code?: string;
+    remaining?: number;
+  };
+
+  if (!response.ok || !data.response) {
+    throw new AIRequestError(data.error || 'The AI assistant could not answer right now.', data.code, response.status);
+  }
+  return { response: data.response, remaining: data.remaining };
 }

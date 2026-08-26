@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PDFViewer } from './PDFViewer';
 import { NotesPanel } from './NotesPanel';
 import { AIAssistant } from './AIAssistant';
-import { StudyDocument, PageNote, AIInteraction, NoteBlock } from '../types';
+import { AccountIdentity, AccountSummary, StudyDocument, PageNote, AIInteraction, NoteBlock } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { ArrowLeft, Download, BookOpen, GripVertical, GripHorizontal, FileText, Sparkles, LayoutGrid, Eye, Check } from 'lucide-react';
 import { get, set } from 'idb-keyval';
@@ -12,11 +12,15 @@ import { exportStudyPackPDF } from '../utils/pdfExport';
 interface StudyInterfaceProps {
   document: StudyDocument;
   onBack: () => void;
+  account: AccountSummary | AccountIdentity | null;
+  onAccountChange: (account: AccountSummary | AccountIdentity | null) => void;
+  onUpdateDocument: (document: StudyDocument) => void;
 }
 
-export function StudyInterface({ document, onBack }: StudyInterfaceProps) {
+export function StudyInterface({ document, onBack, account, onAccountChange, onUpdateDocument }: StudyInterfaceProps) {
   const [pageNumber, setPageNumber] = useState(1);
   const [pageImage, setPageImage] = useState<string | null>(null);
+  const [pageText, setPageText] = useState('');
   const [notes, setNotes] = useState<Record<number, PageNote>>({});
   const [isNotesLoaded, setIsNotesLoaded] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -28,12 +32,20 @@ export function StudyInterface({ document, onBack }: StudyInterfaceProps) {
   // Active Tab when in 'tabs' mode: 'pdf' | 'notes' | 'ai'
   const [activeTab, setActiveTab] = useState<'pdf' | 'notes' | 'ai'>('pdf');
 
-  // Window width detection to auto-default layout on initial mount
+  // Keep narrow screens in the tabbed layout so panels cannot overlap.
   useEffect(() => {
-    if (window.innerWidth < 768) {
-      setLayoutMode('tabs');
-    }
+    const syncLayout = () => {
+      if (window.innerWidth < 768) setLayoutMode((current) => current === 'split' ? 'tabs' : current);
+    };
+    syncLayout();
+    window.addEventListener('resize', syncLayout);
+    return () => window.removeEventListener('resize', syncLayout);
   }, []);
+
+  useEffect(() => {
+    setPageImage(null);
+    setPageText('');
+  }, [pageNumber]);
 
   // Load notes from IndexedDB on mount
   useEffect(() => {
@@ -124,6 +136,41 @@ export function StudyInterface({ document, onBack }: StudyInterfaceProps) {
     }
   };
 
+  const handleRemainingChange = (remaining: number) => {
+    if (!account || !('aiRemaining' in account)) return;
+    onAccountChange({
+      ...account,
+      aiRemaining: remaining,
+      aiUsage: Math.max(0, account.aiLimit - remaining),
+    });
+  };
+
+  const handleDocumentLoaded = (totalPages: number) => {
+    if (document.totalPages !== totalPages) {
+      onUpdateDocument({ ...document, totalPages, updatedAt: Date.now() });
+    }
+  };
+
+  const pdfViewerProps = {
+    file: document.fileData,
+    pageNumber,
+    setPageNumber,
+    onPageRenderSuccess: setPageImage,
+    onPageTextReady: setPageText,
+    onDocumentLoaded: handleDocumentLoaded,
+  };
+
+  const aiAssistantProps = {
+    pageNumber,
+    pageImage,
+    pageText,
+    history: currentNote.aiHistory || [],
+    account,
+    onRemainingChange: handleRemainingChange,
+    onAddInteraction: handleAddInteraction,
+    onInsertToNotes: handleInsertToNotes,
+  };
+
   const handleExport = async () => {
     try {
       setIsExporting(true);
@@ -167,7 +214,7 @@ export function StudyInterface({ document, onBack }: StudyInterfaceProps) {
           <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
             <button
               onClick={() => setLayoutMode('split')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+              className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
                 layoutMode === 'split' ? 'bg-white text-indigo-700 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
               }`}
               title="3-Pane Split View (All 3 boxes visible at once)"
@@ -267,24 +314,14 @@ export function StudyInterface({ document, onBack }: StudyInterfaceProps) {
         {layoutMode === 'pdf-only' ? (
           /* PDF Reader Full Screen */
           <div className="h-full w-full p-1">
-            <PDFViewer
-              file={document.fileData}
-              pageNumber={pageNumber}
-              setPageNumber={setPageNumber}
-              onPageRenderSuccess={setPageImage}
-            />
+            <PDFViewer {...pdfViewerProps} />
           </div>
         ) : layoutMode === 'tabs' ? (
           /* Single Tab View */
           <div className="h-full w-full relative">
             {activeTab === 'pdf' && (
               <div className="h-full w-full flex flex-col relative">
-                <PDFViewer
-                  file={document.fileData}
-                  pageNumber={pageNumber}
-                  setPageNumber={setPageNumber}
-                  onPageRenderSuccess={setPageImage}
-                />
+                <PDFViewer {...pdfViewerProps} />
                 
                 {/* Floating Navigation Quick Bar */}
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-slate-900/90 text-white p-1.5 rounded-full shadow-lg backdrop-blur-md z-30">
@@ -321,12 +358,7 @@ export function StudyInterface({ document, onBack }: StudyInterfaceProps) {
 
             {activeTab === 'ai' && (
               <div className="h-full w-full">
-                <AIAssistant
-                  pageImage={pageImage}
-                  history={currentNote.aiHistory || []}
-                  onAddInteraction={handleAddInteraction}
-                  onInsertToNotes={handleInsertToNotes}
-                />
+                <AIAssistant {...aiAssistantProps} />
               </div>
             )}
           </div>
@@ -336,12 +368,7 @@ export function StudyInterface({ document, onBack }: StudyInterfaceProps) {
             {/* Left Panel: PDF Viewer */}
             <Panel defaultSize={50} minSize={25} className="flex flex-col">
               <div className="h-full w-full p-1">
-                <PDFViewer
-                  file={document.fileData}
-                  pageNumber={pageNumber}
-                  setPageNumber={setPageNumber}
-                  onPageRenderSuccess={setPageImage}
-                />
+                <PDFViewer {...pdfViewerProps} />
               </div>
             </Panel>
 
@@ -370,12 +397,7 @@ export function StudyInterface({ document, onBack }: StudyInterfaceProps) {
 
                 {/* AI Assistant Section */}
                 <Panel defaultSize={55} minSize={25} className="p-1">
-                  <AIAssistant
-                    pageImage={pageImage}
-                    history={currentNote.aiHistory || []}
-                    onAddInteraction={handleAddInteraction}
-                    onInsertToNotes={handleInsertToNotes}
-                  />
+                  <AIAssistant {...aiAssistantProps} />
                 </Panel>
               </PanelGroup>
             </Panel>

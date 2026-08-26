@@ -1,8 +1,12 @@
 node_modules/
 build/
 dist/
+.next/
+.vinext/
+.wrangler/
 coverage/
 .DS_Store
+tsconfig.tsbuildinfo
 *.log
 .env*
 !.env.example

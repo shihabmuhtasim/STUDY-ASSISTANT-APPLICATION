@@ -31,3 +31,16 @@ export interface AIInteraction {
   createdAt: number;
   insertedIntoNotes: boolean;
 }
+
+export interface AccountIdentity {
+  userId: string;
+  email: string;
+  displayName: string;
+}
+
+export interface AccountSummary extends AccountIdentity {
+  plan: 'free' | 'pro';
+  aiUsage: number;
+  aiLimit: number;
+  aiRemaining: number;
+}

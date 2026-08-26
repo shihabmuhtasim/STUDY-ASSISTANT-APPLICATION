@@ -1,186 +1,176 @@
-import React, { useState } from 'react';
-import { Send, Sparkles, Loader2, Copy, Plus, Check } from 'lucide-react';
-import { AIInteraction } from '../types';
-import { askGeminiAboutPage } from '../services/ai';
+import React, { useEffect, useState } from 'react';
+import { Check, Copy, Image as ImageIcon, Loader2, LockKeyhole, Plus, Send, Sparkles } from 'lucide-react';
+import { AccountIdentity, AccountSummary, AIInteraction } from '../types';
+import { AIRequestError, askAIAboutPage } from '../services/ai';
 import { v4 as uuidv4 } from 'uuid';
 import Markdown from 'react-markdown';
 import { EditInsertModal } from './EditInsertModal';
 
 interface AIAssistantProps {
+  pageNumber: number;
   pageImage: string | null;
+  pageText: string;
   history: AIInteraction[];
+  account: AccountSummary | AccountIdentity | null;
+  onRemainingChange: (remaining: number) => void;
   onAddInteraction: (interaction: AIInteraction) => void;
   onInsertToNotes: (text: string, questionHeader?: string) => void;
 }
 
-export function AIAssistant({ pageImage, history, onAddInteraction, onInsertToNotes }: AIAssistantProps) {
-  const [prompt, setPrompt] = useState("");
+const quickPrompts = ['Summarize this page', 'Explain the key ideas', 'Create 3 quiz questions'];
+
+export function AIAssistant({
+  pageNumber,
+  pageImage,
+  pageText,
+  history,
+  account,
+  onRemainingChange,
+  onAddInteraction,
+  onInsertToNotes,
+}: AIAssistantProps) {
+  const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [includeImage, setIncludeImage] = useState(false);
+  const [insertModalState, setInsertModalState] = useState({ isOpen: false, promptQuestion: '', aiResponse: '' });
 
-  // Edit & Insert Modal State
-  const [insertModalState, setInsertModalState] = useState<{
-    isOpen: boolean;
-    promptQuestion: string;
-    aiResponse: string;
-  }>({
-    isOpen: false,
-    promptQuestion: '',
-    aiResponse: '',
-  });
+  useEffect(() => {
+    setIncludeImage(!pageText.trim());
+    setError(null);
+  }, [pageNumber, pageText]);
 
   const handleAsk = async (text: string) => {
-    if (!text.trim() || !pageImage) return;
+    if (!text.trim() || isLoading) return;
+    if (!account) {
+      setError('Sign in to use the page assistant. Your PDFs remain stored on this device.');
+      return;
+    }
+    if (!pageText.trim() && !pageImage) {
+      setError('The page is still being prepared. Try again in a moment.');
+      return;
+    }
 
     setIsLoading(true);
-    setPrompt("");
-
+    setError(null);
+    setPrompt('');
     try {
-      const response = await askGeminiAboutPage(text, pageImage);
-      
-      const interaction: AIInteraction = {
+      const result = await askAIAboutPage({
+        prompt: text.trim(),
+        pageNumber,
+        pageText,
+        pageImage: includeImage ? pageImage || undefined : undefined,
+        history,
+      });
+      onAddInteraction({
         id: uuidv4(),
-        prompt: text,
-        response,
+        prompt: text.trim(),
+        response: result.response,
         createdAt: Date.now(),
         insertedIntoNotes: false,
-      };
-      
-      onAddInteraction(interaction);
-    } catch (error) {
-      console.error(error);
-      alert("Failed to get AI response. Please check your network or try again.");
+      });
+      if (typeof result.remaining === 'number') onRemainingChange(result.remaining);
+    } catch (requestError) {
+      if (requestError instanceof AIRequestError) setError(requestError.message);
+      else setError('The AI assistant could not answer right now. Try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleCopy = (id: string, text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const handleOpenInsertModal = (promptQuestion: string, aiResponse: string) => {
-    setInsertModalState({
-      isOpen: true,
-      promptQuestion,
-      aiResponse,
-    });
-  };
-
-  const handleConfirmInsert = (editedContent: string, questionHeader?: string) => {
-    onInsertToNotes(editedContent, questionHeader);
+  const handleCopy = async (id: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      window.setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      setError('The answer could not be copied automatically.');
+    }
   };
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-      <div className="p-3 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          <Sparkles size={18} className="text-indigo-500" />
-          <h3 className="font-medium text-slate-800 text-sm">AI Page Assistant</h3>
+    <div className="flex flex-col h-full bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
+      <div className="p-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <Sparkles size={18} className="text-indigo-600 shrink-0" />
+          <h3 className="font-medium text-slate-800 text-sm truncate">AI Page Assistant</h3>
         </div>
-        <span className="text-[11px] font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
-          Page Aware
-        </span>
+        {account && 'aiRemaining' in account && (
+          <span className="text-xs text-slate-500 whitespace-nowrap">{account.aiRemaining} left</span>
+        )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {history.length === 0 ? (
-          <div className="text-center text-slate-400 text-sm my-auto py-12">
-            <div className="w-12 h-12 bg-indigo-50 text-indigo-500 rounded-2xl flex items-center justify-center mx-auto mb-3">
-              <Sparkles size={24} />
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+        {!account ? (
+          <div className="min-h-full grid place-items-center text-center py-8">
+            <div>
+              <LockKeyhole size={24} className="mx-auto text-slate-400" />
+              <p className="mt-3 text-sm font-medium text-slate-800">Sign in to ask about this page</p>
+              <p className="mt-1 text-xs text-slate-500 max-w-xs">Your PDF stays on this device. Only the current page context is sent when you ask a question.</p>
+              <a href="/signin-with-chatgpt?return_to=/" className="mt-4 inline-flex px-3 py-2 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800">Sign in</a>
             </div>
-            <p className="font-medium text-slate-700">Ask anything about this page</p>
-            <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
-              Get summaries, explanations of complex diagrams, key takeaways, or custom notes.
-            </p>
+          </div>
+        ) : history.length === 0 ? (
+          <div className="py-8 text-center">
+            <Sparkles size={24} className="mx-auto text-indigo-500" />
+            <p className="mt-3 font-medium text-slate-700 text-sm">Ask about page {pageNumber}</p>
+            <p className="text-xs text-slate-500 mt-1">Answers use the text extracted from this page.</p>
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              {quickPrompts.map((item) => (
+                <button key={item} type="button" onClick={() => handleAsk(item)} className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-700 hover:border-indigo-300 hover:text-indigo-700">{item}</button>
+              ))}
+            </div>
           </div>
         ) : (
           history.map((item) => (
             <div key={item.id} className="space-y-3">
-              <div className="flex justify-end">
-                <div className="bg-slate-800 text-white px-3.5 py-2 rounded-2xl rounded-tr-xs text-xs font-medium max-w-[85%] shadow-xs">
-                  {item.prompt}
-                </div>
-              </div>
-              <div className="flex justify-start">
-                <div className="bg-indigo-50/70 text-indigo-950 px-4 py-3 rounded-2xl rounded-tl-xs text-sm max-w-[95%] border border-indigo-100/80 shadow-xs space-y-3">
-                  <div className="prose prose-sm prose-indigo max-w-none text-slate-800 leading-relaxed">
-                    <Markdown>{item.response}</Markdown>
-                  </div>
-                  <div className="flex items-center gap-2 pt-2 border-t border-indigo-100">
-                    <button
-                      onClick={() => handleOpenInsertModal(item.prompt, item.response)}
-                      className="flex items-center gap-1.5 text-xs font-medium text-indigo-700 hover:text-indigo-800 bg-white hover:bg-indigo-50 px-2.5 py-1.5 rounded-lg shadow-2xs border border-indigo-200 transition-all cursor-pointer"
-                    >
-                      <Plus size={14} className="text-indigo-600" />
-                      Edit & Insert to Notes
-                    </button>
-                    <button
-                      onClick={() => handleCopy(item.id, item.response)}
-                      className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-800 bg-white hover:bg-slate-100 px-2.5 py-1.5 rounded-lg shadow-2xs border border-slate-200 transition-all cursor-pointer"
-                    >
-                      {copiedId === item.id ? (
-                        <>
-                          <Check size={14} className="text-emerald-600" />
-                          <span className="text-emerald-600">Copied</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy size={14} />
-                          Copy
-                        </>
-                      )}
-                    </button>
-                  </div>
+              <div className="flex justify-end"><div className="bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-medium max-w-[85%]">{item.prompt}</div></div>
+              <div className="bg-indigo-50/70 text-indigo-950 px-4 py-3 rounded-lg text-sm border border-indigo-100 space-y-3">
+                <div className="prose prose-sm prose-slate max-w-none leading-relaxed"><Markdown>{item.response}</Markdown></div>
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-indigo-100">
+                  <button type="button" onClick={() => setInsertModalState({ isOpen: true, promptQuestion: item.prompt, aiResponse: item.response })} className="flex items-center gap-1.5 text-xs font-medium text-indigo-700 bg-white hover:bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-indigo-200"><Plus size={14} />Insert to notes</button>
+                  <button type="button" onClick={() => handleCopy(item.id, item.response)} className="flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200">
+                    {copiedId === item.id ? <><Check size={14} className="text-emerald-600" />Copied</> : <><Copy size={14} />Copy</>}
+                  </button>
                 </div>
               </div>
             </div>
           ))
         )}
-        {isLoading && (
-          <div className="flex justify-start">
-            <div className="bg-slate-50 text-slate-600 px-4 py-3 rounded-2xl rounded-tl-xs text-sm flex items-center gap-2.5 border border-slate-200/80 shadow-2xs">
-              <Loader2 size={16} className="animate-spin text-indigo-600" />
-              <span>Analyzing this page...</span>
-            </div>
-          </div>
-        )}
+
+        {isLoading && <div className="flex items-center gap-2 text-sm text-slate-600"><Loader2 size={16} className="animate-spin text-indigo-600" />Analyzing page {pageNumber}…</div>}
       </div>
 
       <div className="p-3 border-t border-slate-100 bg-white shrink-0">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleAsk(prompt);
-          }}
-          className="relative flex items-center"
-        >
+        {error && <p role="alert" className="mb-2 text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+            <input type="checkbox" checked={includeImage} onChange={(event) => setIncludeImage(event.target.checked)} disabled={!pageImage} className="accent-indigo-600" />
+            <ImageIcon size={14} />Include page image
+          </label>
+          <span className="text-[11px] text-slate-400">Useful for diagrams</span>
+        </div>
+        <form onSubmit={(event) => { event.preventDefault(); handleAsk(prompt); }} className="relative flex items-center">
           <input
             type="text"
             value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder={pageImage ? "Ask AI about this page..." : "Loading page preview..."}
-            disabled={isLoading || !pageImage}
-            className="w-full pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all disabled:opacity-50"
+            onChange={(event) => setPrompt(event.target.value)}
+            placeholder={account ? 'Ask about this page…' : 'Sign in to use AI'}
+            disabled={isLoading || !account}
+            maxLength={4000}
+            className="w-full pl-4 pr-11 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs sm:text-sm focus:border-indigo-500 disabled:opacity-60"
           />
-          <button
-            type="submit"
-            disabled={!prompt.trim() || isLoading || !pageImage}
-            className="absolute right-2 p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-40 disabled:hover:bg-transparent transition-colors cursor-pointer"
-          >
-            <Send size={18} />
-          </button>
+          <button type="submit" disabled={!prompt.trim() || isLoading || !account} className="absolute right-2 p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30" aria-label="Send question"><Send size={18} /></button>
         </form>
       </div>
 
       <EditInsertModal
         isOpen={insertModalState.isOpen}
-        onClose={() => setInsertModalState((prev) => ({ ...prev, isOpen: false }))}
+        onClose={() => setInsertModalState((current) => ({ ...current, isOpen: false }))}
         promptQuestion={insertModalState.promptQuestion}
         aiResponse={insertModalState.aiResponse}
-        onConfirmInsert={handleConfirmInsert}
+        onConfirmInsert={onInsertToNotes}
       />
     </div>
   );
