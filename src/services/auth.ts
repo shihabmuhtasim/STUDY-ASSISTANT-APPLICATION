@@ -1,50 +1,94 @@
-import { createClient, type User } from '@supabase/supabase-js';
-import type { AccountIdentity } from '../types';
+import { getApp, getApps, initializeApp } from 'firebase/app';
+import {
+  GoogleAuthProvider,
+  browserLocalPersistence,
+  getAuth,
+  getRedirectResult,
+  onAuthStateChanged,
+  setPersistence,
+  signInWithRedirect,
+  signOut,
+  type User,
+} from 'firebase/auth';
+import { doc, getDoc, getFirestore, serverTimestamp, setDoc } from 'firebase/firestore';
+import type { AccountIdentity, AccountSummary } from '../types';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-const supabaseKey = (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)?.trim();
+const firebaseConfig = {
+  apiKey: 'AIzaSyBTQydgSo-CmDM8kAXunBCqqUlKG8oTS5I',
+  authDomain: 'ai-pdf-study-assistant.firebaseapp.com',
+  projectId: 'ai-pdf-study-assistant',
+  storageBucket: 'ai-pdf-study-assistant.firebasestorage.app',
+  messagingSenderId: '478556485094',
+  appId: '1:478556485094:web:5538b0a73fc14ea750d227',
+};
 
-export const isAuthConfigured = Boolean(supabaseUrl && supabaseKey);
+const firebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
+export const firebaseAuth = getAuth(firebaseApp);
+export const firestore = getFirestore(firebaseApp);
+export const isAuthConfigured = true;
 
-export const supabase = isAuthConfigured
-  ? createClient(supabaseUrl!, supabaseKey!, {
-      auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-    })
-  : null;
+const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-export function accountFromSupabaseUser(user: User): AccountIdentity {
-  const displayName = typeof user.user_metadata?.display_name === 'string'
-    ? user.user_metadata.display_name
-    : typeof user.user_metadata?.full_name === 'string'
-      ? user.user_metadata.full_name
-      : user.email || 'Student';
-  return { userId: user.id, email: user.email || '', displayName };
+export function accountFromFirebaseUser(user: User): AccountIdentity {
+  return {
+    userId: user.uid,
+    email: user.email || '',
+    displayName: user.displayName || user.email || 'Student',
+  };
 }
 
-export async function signUpWithEmail(email: string, password: string, displayName: string) {
-  if (!supabase) throw new Error('Account service is not configured yet.');
-  return supabase.auth.signUp({
-    email,
-    password,
-    options: { data: { display_name: displayName }, emailRedirectTo: window.location.origin },
-  });
+export async function accountSummaryFromFirebaseUser(user: User): Promise<AccountSummary | AccountIdentity> {
+  const identity = accountFromFirebaseUser(user);
+  const profileRef = doc(firestore, 'users', user.uid);
+  let snapshot = await getDoc(profileRef);
+
+  if (!snapshot.exists()) {
+    await setDoc(profileRef, {
+      email: identity.email,
+      displayName: identity.displayName,
+      photoURL: user.photoURL || null,
+      plan: 'free',
+      questionsUsed: 0,
+      questionLimit: 100,
+      createdAt: serverTimestamp(),
+      lastLoginAt: serverTimestamp(),
+    });
+    snapshot = await getDoc(profileRef);
+  } else {
+    await setDoc(profileRef, {
+      email: identity.email,
+      displayName: identity.displayName,
+      photoURL: user.photoURL || null,
+      lastLoginAt: serverTimestamp(),
+    }, { merge: true });
+  }
+
+  const profile = snapshot.data();
+  const aiUsage = Number(profile?.questionsUsed) || 0;
+  const aiLimit = Number(profile?.questionLimit) || 100;
+  return {
+    ...identity,
+    plan: profile?.plan === 'pro' ? 'pro' : 'free',
+    aiUsage,
+    aiLimit,
+    aiRemaining: Math.max(0, aiLimit - aiUsage),
+  };
 }
 
-export async function signInWithEmail(email: string, password: string) {
-  if (!supabase) throw new Error('Account service is not configured yet.');
-  return supabase.auth.signInWithPassword({ email, password });
+export function subscribeToAccount(callback: (user: User | null) => void) {
+  return onAuthStateChanged(firebaseAuth, callback);
+}
+
+export async function finishGoogleRedirect() {
+  return getRedirectResult(firebaseAuth);
 }
 
 export async function signInWithGoogle() {
-  if (!supabase) throw new Error('Account service is not configured yet.');
-  return supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo: window.location.origin },
-  });
+  await setPersistence(firebaseAuth, browserLocalPersistence);
+  return signInWithRedirect(firebaseAuth, googleProvider);
 }
 
 export async function signOutAccount() {
-  if (!supabase) return;
-  const { error } = await supabase.auth.signOut();
-  if (error) throw error;
+  await signOut(firebaseAuth);
 }

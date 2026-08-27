@@ -14,7 +14,7 @@ import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { SiteNavigation } from './components/SiteNavigation';
 import { SiteInfoModal } from './components/SiteInfoModal';
 import { AuthModal } from './components/AuthModal';
-import { accountFromSupabaseUser, signOutAccount, supabase } from './services/auth';
+import { accountSummaryFromFirebaseUser, finishGoogleRedirect, signOutAccount, subscribeToAccount } from './services/auth';
 
 const StudyInterface = dynamic(
   () => import('./components/StudyInterface').then((module) => module.StudyInterface),
@@ -65,14 +65,25 @@ export default function App({ initialAccount }: AppProps) {
   }, [refreshAccount]);
 
   useEffect(() => {
-    if (!supabase) return;
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) setAccount(accountFromSupabaseUser(data.user));
-    }).catch(() => undefined);
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAccount(session?.user ? accountFromSupabaseUser(session.user) : null);
+    finishGoogleRedirect().catch((error) => {
+      console.error('Google sign-in redirect failed', error);
+      setStorageError('Google sign-in could not be completed. Please try again.');
     });
-    return () => data.subscription.unsubscribe();
+    return subscribeToAccount((user) => {
+      if (!user) {
+        setAccount(null);
+        return;
+      }
+      accountSummaryFromFirebaseUser(user)
+        .then((nextAccount) => {
+          setAccount(nextAccount);
+          setAuthOpen(false);
+        })
+        .catch((error) => {
+          console.error('Failed to load account profile', error);
+          setStorageError('Your Google account is connected, but the profile could not be loaded.');
+        });
+    });
   }, []);
 
   const handleAddDocument = async (doc: StudyDocument) => {
@@ -145,11 +156,12 @@ export default function App({ initialAccount }: AppProps) {
           onDeleteDocument={handleDeleteDocument}
           onUpdateDocument={handleUpdateDocument}
           account={account}
+          onRequireAuth={() => setAuthOpen(true)}
         />
       )}
       </div>
       <SiteInfoModal view={infoView} onClose={() => setInfoView(null)} />
-      <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} onAuthenticated={setAccount} />
+      <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} />
       </div>
     </AppErrorBoundary>
   );

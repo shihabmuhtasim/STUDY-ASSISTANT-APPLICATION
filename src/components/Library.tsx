@@ -11,9 +11,10 @@ interface LibraryProps {
   onDeleteDocument: (id: string) => void;
   onUpdateDocument: (doc: StudyDocument) => void;
   account: AccountSummary | AccountIdentity | null;
+  onRequireAuth: () => void;
 }
 
-export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocument, onUpdateDocument }: LibraryProps) {
+export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocument, onUpdateDocument, account, onRequireAuth }: LibraryProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [query, setQuery] = useState('');
@@ -31,6 +32,10 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
 
   const processFile = async (file: File) => {
     if (isImporting) return;
+    if (!account) {
+      onRequireAuth();
+      return;
+    }
     setError(null);
     setIsImporting(true);
     try {
@@ -97,9 +102,9 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
           <span className="mx-auto grid h-12 w-12 place-items-center rounded-lg bg-indigo-50 text-indigo-700"><Upload size={24} /></span>
           <h2 className="mt-3 text-lg font-semibold text-slate-900">Add a document</h2>
           <p className="mt-1 text-sm text-slate-500">PDF, Word, text, Markdown, HTML, RTF, and CSV files are supported.</p>
-          <button type="button" disabled={isImporting} onClick={() => fileInputRef.current?.click()} className="mt-5 inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 text-sm disabled:opacity-60">
+          <button type="button" disabled={isImporting} onClick={() => account ? fileInputRef.current?.click() : onRequireAuth()} className="mt-5 inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 text-sm disabled:opacity-60">
             {isImporting && <Loader2 size={15} className="animate-spin" />}
-            {isImporting ? 'Preparing document…' : 'Select document'}
+            {isImporting ? 'Preparing document…' : account ? 'Select document' : 'Sign in to add a document'}
           </button>
           <input
             type="file"

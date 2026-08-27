@@ -14,12 +14,12 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.112.4",
     "@tailwindcss/typography": "^0.5.19",
     "clsx": "^2.1.1",
     "docx-renderer": "^0.2.2",
     "dompurify": "^3.4.14",
     "drizzle-orm": "0.45.2",
+    "firebase": "^12.18.0",
     "html2canvas": "^1.4.1",
     "idb-keyval": "^6.2.2",
     "jsdoc": "github:Alpaq92/JSDoc#main",
