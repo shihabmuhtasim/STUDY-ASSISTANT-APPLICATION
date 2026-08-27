@@ -14,7 +14,7 @@ import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { SiteNavigation } from './components/SiteNavigation';
 import { SiteInfoModal } from './components/SiteInfoModal';
 import { AuthModal } from './components/AuthModal';
-import { accountSummaryFromFirebaseUser, finishGoogleRedirect, signOutAccount, subscribeToAccount } from './services/auth';
+import { accountSummaryFromFirebaseUser, signOutAccount, subscribeToAccount } from './services/auth';
 
 const StudyInterface = dynamic(
   () => import('./components/StudyInterface').then((module) => module.StudyInterface),
@@ -65,10 +65,6 @@ export default function App({ initialAccount }: AppProps) {
   }, [refreshAccount]);
 
   useEffect(() => {
-    finishGoogleRedirect().catch((error) => {
-      console.error('Google sign-in redirect failed', error);
-      setStorageError('Google sign-in could not be completed. Please try again.');
-    });
     return subscribeToAccount((user) => {
       if (!user) {
         setAccount(null);

@@ -3,10 +3,9 @@ import {
   GoogleAuthProvider,
   browserLocalPersistence,
   getAuth,
-  getRedirectResult,
   onAuthStateChanged,
   setPersistence,
-  signInWithRedirect,
+  signInWithPopup,
   signOut,
   type User,
 } from 'firebase/auth';
@@ -80,13 +79,9 @@ export function subscribeToAccount(callback: (user: User | null) => void) {
   return onAuthStateChanged(firebaseAuth, callback);
 }
 
-export async function finishGoogleRedirect() {
-  return getRedirectResult(firebaseAuth);
-}
-
 export async function signInWithGoogle() {
   await setPersistence(firebaseAuth, browserLocalPersistence);
-  return signInWithRedirect(firebaseAuth, googleProvider);
+  return signInWithPopup(firebaseAuth, googleProvider);
 }
 
 export async function signOutAccount() {

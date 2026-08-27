@@ -19,7 +19,14 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
     try {
       await signInWithGoogle();
     } catch (googleError) {
-      setError(googleError instanceof Error ? googleError.message : 'Google sign-in could not start.');
+      const code = typeof googleError === 'object' && googleError && 'code' in googleError
+        ? String(googleError.code)
+        : '';
+      setError(code === 'auth/popup-closed-by-user'
+        ? 'The Google sign-in window was closed before sign-in finished.'
+        : code === 'auth/popup-blocked'
+          ? 'Your browser blocked the Google sign-in window. Allow popups for this site and try again.'
+          : 'Google sign-in could not be completed. Please try again.');
       setIsSubmitting(false);
     }
   };
@@ -46,7 +53,7 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
           <button type="button" onClick={continueWithGoogle} disabled={!isAuthConfigured || isSubmitting} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50">
             {isSubmitting ? <Loader2 size={17} className="animate-spin" /> : <span className="grid h-5 w-5 place-items-center rounded-full bg-white text-sm font-bold text-blue-600">G</span>}
-            {isSubmitting ? 'Opening Google…' : 'Continue with Google'}
+            {isSubmitting ? 'Waiting for Google…' : 'Continue with Google'}
           </button>
           <div className="mt-4 flex items-start gap-2 border-t border-slate-200 pt-4 text-xs leading-relaxed text-slate-500"><CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-600" />New users are registered automatically. Returning users are signed back into the same account.</div>
         </div>

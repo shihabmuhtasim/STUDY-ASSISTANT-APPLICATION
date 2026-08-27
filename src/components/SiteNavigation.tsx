@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BookOpen, ChevronDown, CircleUserRound, LogIn, Mail, Menu, Sparkles, Tag, X } from 'lucide-react';
+import { BookOpen, ChevronDown, CircleUserRound, LogIn, LogOut, Mail, Menu, Sparkles, Tag, X } from 'lucide-react';
 import type { AccountIdentity, AccountSummary } from '../types';
 
 interface SiteNavigationProps {
@@ -40,7 +40,23 @@ export function SiteNavigation({ account, onLibrary, onPlans, onContact, onAuth,
               <button type="button" onClick={() => setAccountOpen((value) => !value)} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:border-slate-300" aria-expanded={accountOpen}>
                 <CircleUserRound size={17} className="text-indigo-600" /><span className="max-w-32 truncate">{account.displayName}</span><ChevronDown size={14} />
               </button>
-              {accountOpen && <div className="absolute right-0 top-12 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-xl"><p className="truncate px-2 py-1 text-xs text-slate-500">{account.email}</p><button type="button" onClick={() => { setAccountOpen(false); onSignOut(); }} className="mt-1 w-full rounded-md px-2 py-2 text-left text-sm text-red-700 hover:bg-red-50">Sign out</button></div>}
+              {accountOpen && (
+                <div className="absolute right-0 top-12 w-72 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
+                  <div className="flex items-center gap-3 rounded-md bg-slate-50 px-3 py-3">
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-indigo-100 text-indigo-700"><CircleUserRound size={22} /></span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase text-slate-500">Profile</p>
+                      <p className="truncate text-sm font-semibold text-slate-900">{account.displayName}</p>
+                      <p className="truncate text-xs text-slate-500">{account.email}</p>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between px-2 py-1 text-xs text-slate-500">
+                    <span>Current plan</span>
+                    <span className="rounded-full bg-emerald-50 px-2 py-1 font-semibold capitalize text-emerald-700">{'plan' in account ? account.plan : 'Free'}</span>
+                  </div>
+                  <button type="button" onClick={() => { setAccountOpen(false); onSignOut(); }} className="mt-2 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium text-red-700 hover:bg-red-50"><LogOut size={16} />Sign out</button>
+                </div>
+              )}
             </div>
           ) : (
             <button type="button" onClick={onAuth} className="flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"><LogIn size={16} />Sign in</button>
@@ -55,7 +71,7 @@ export function SiteNavigation({ account, onLibrary, onPlans, onContact, onAuth,
         <button type="button" onClick={() => run(onPlans)} className="block w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">Plans</button>
         <button type="button" onClick={() => run(onContact)} className="block w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">Contact</button>
         <div className="my-2 h-px bg-slate-200" />
-        {account ? <><p className="truncate px-3 py-2 text-xs text-slate-500">{account.email}</p><button type="button" onClick={() => run(onSignOut)} className="block w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-red-700 hover:bg-red-50">Sign out</button></> : <button type="button" onClick={() => run(onAuth)} className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white"><Sparkles size={16} />Sign in or create account</button>}
+        {account ? <><p className="px-3 pt-2 text-xs font-semibold uppercase text-slate-500">Profile</p><p className="truncate px-3 py-1 text-sm font-medium text-slate-900">{account.displayName}</p><p className="truncate px-3 pb-2 text-xs text-slate-500">{account.email}</p><button type="button" onClick={() => run(onSignOut)} className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm font-medium text-red-700 hover:bg-red-50"><LogOut size={16} />Sign out</button></> : <button type="button" onClick={() => run(onAuth)} className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white"><Sparkles size={16} />Sign in or create account</button>}
       </nav>}
     </header>
   );
