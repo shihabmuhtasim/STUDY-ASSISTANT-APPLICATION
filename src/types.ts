@@ -55,13 +55,26 @@ export interface AIInteraction {
   response: string;
   createdAt: number;
   insertedIntoNotes: boolean;
-  provider?: 'cloudflare' | 'gemini' | 'local';
+  provider?: 'cloudflare' | 'gemini' | 'custom' | 'local';
   model?: string;
   requestedModel?: AIModelPreference;
   fallbackUsed?: boolean;
 }
 
-export type AIModelPreference = 'auto' | 'gemini-flash' | 'gemini-flash-lite' | 'qwen' | 'llama';
+export type AIModelPreference = 'auto' | 'gemini-flash' | 'gemini-flash-lite' | 'qwen' | 'llama' | 'custom';
+
+export type CustomAIService = 'openai' | 'openrouter' | 'nvidia' | 'groq' | 'together' | 'gemini' | 'anthropic' | 'custom';
+export type CustomAIProvider = 'openai-compatible' | 'gemini' | 'anthropic';
+
+export interface CustomAIConnection {
+  id: string;
+  name: string;
+  service: CustomAIService;
+  provider: CustomAIProvider;
+  apiKey: string;
+  model: string;
+  baseUrl?: string;
+}
 
 export interface AccountIdentity {
   userId: string;

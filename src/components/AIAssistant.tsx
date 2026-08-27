@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Bot, Check, Copy, Image as ImageIcon, Loader2, Plus, Send, Sparkles } from 'lucide-react';
-import { AccountIdentity, AccountSummary, AIInteraction, AIModelPreference } from '../types';
+import { Bot, Check, Copy, Image as ImageIcon, KeyRound, Loader2, Plus, Send, Sparkles } from 'lucide-react';
+import { AccountIdentity, AccountSummary, AIInteraction, AIModelPreference, CustomAIConnection } from '../types';
 import { AIRequestError, askAIAboutPage } from '../services/ai';
+import { askCustomAI } from '../services/customAI';
 import { v4 as uuidv4 } from 'uuid';
 import Markdown from 'react-markdown';
 import { EditInsertModal } from './EditInsertModal';
+import { AIConnectionsModal } from './AIConnectionsModal';
 
 interface AIAssistantProps {
   pageNumber: number;
@@ -27,6 +29,24 @@ const modelOptions: Array<{ value: AIModelPreference; label: string }> = [
   { value: 'qwen', label: 'Qwen 3' },
   { value: 'llama', label: 'Llama 3.2' },
 ];
+const CONNECTIONS_SESSION_KEY = 'study-assistant-session-ai-connections';
+const SELECTED_CONNECTION_SESSION_KEY = 'study-assistant-session-selected-ai-connection';
+const customServices = new Set(['openai', 'openrouter', 'nvidia', 'groq', 'together', 'gemini', 'anthropic', 'custom']);
+const customProviders = new Set(['openai-compatible', 'gemini', 'anthropic']);
+
+function isCustomAIConnection(item: unknown): item is CustomAIConnection {
+  if (!item || typeof item !== 'object') return false;
+  const connection = item as Partial<CustomAIConnection>;
+  return typeof connection.id === 'string'
+    && typeof connection.name === 'string'
+    && typeof connection.apiKey === 'string'
+    && typeof connection.model === 'string'
+    && typeof connection.service === 'string'
+    && customServices.has(connection.service)
+    && typeof connection.provider === 'string'
+    && customProviders.has(connection.provider)
+    && (connection.baseUrl === undefined || typeof connection.baseUrl === 'string');
+}
 
 function displayModel(model: string) {
   if (model === 'gemini-3.6-flash') return 'Gemini 3.6 Flash';
@@ -56,11 +76,26 @@ export function AIAssistant({
   const [modelPreference, setModelPreference] = useState<AIModelPreference>('auto');
   const [allowFallback, setAllowFallback] = useState(true);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [connections, setConnections] = useState<CustomAIConnection[]>([]);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [insertModalState, setInsertModalState] = useState({ isOpen: false, promptQuestion: '', aiResponse: '' });
 
   useEffect(() => {
     const savedModel = window.localStorage.getItem('study-assistant-model') as AIModelPreference | null;
-    if (savedModel && modelOptions.some((option) => option.value === savedModel)) setModelPreference(savedModel);
+    let sessionConnections: CustomAIConnection[] = [];
+    try {
+      const parsed: unknown = JSON.parse(window.sessionStorage.getItem(CONNECTIONS_SESSION_KEY) || '[]');
+      sessionConnections = Array.isArray(parsed) ? parsed.filter(isCustomAIConnection) : [];
+    } catch {
+      sessionConnections = [];
+    }
+    const savedConnectionId = window.sessionStorage.getItem(SELECTED_CONNECTION_SESSION_KEY);
+    const selectedId = sessionConnections.some((item) => item.id === savedConnectionId) ? savedConnectionId : sessionConnections[0]?.id || null;
+    setConnections(sessionConnections);
+    setSelectedConnectionId(selectedId);
+    if (savedModel === 'custom' && selectedId) setModelPreference('custom');
+    else if (savedModel && modelOptions.some((option) => option.value === savedModel)) setModelPreference(savedModel);
     setAllowFallback(window.localStorage.getItem('study-assistant-fallback') !== 'false');
     setPreferencesLoaded(true);
   }, []);
@@ -69,7 +104,10 @@ export function AIAssistant({
     if (!preferencesLoaded) return;
     window.localStorage.setItem('study-assistant-model', modelPreference);
     window.localStorage.setItem('study-assistant-fallback', String(allowFallback));
-  }, [modelPreference, allowFallback, preferencesLoaded]);
+    window.sessionStorage.setItem(CONNECTIONS_SESSION_KEY, JSON.stringify(connections));
+    if (selectedConnectionId) window.sessionStorage.setItem(SELECTED_CONNECTION_SESSION_KEY, selectedConnectionId);
+    else window.sessionStorage.removeItem(SELECTED_CONNECTION_SESSION_KEY);
+  }, [modelPreference, allowFallback, connections, selectedConnectionId, preferencesLoaded]);
 
   useEffect(() => {
     setIncludeImage(!pageText.trim());
@@ -88,16 +126,31 @@ export function AIAssistant({
     setError(null);
     setPrompt('');
     try {
-      const result = await askAIAboutPage({
+      const activeConnection = connections.find((connection) => connection.id === selectedConnectionId);
+      if (modelPreference === 'custom' && !activeConnection) {
+        setConnectionsOpen(true);
+        throw new AIRequestError('Add or select an API connection before using your model.');
+      }
+      const request = {
         prompt: text.trim(),
         pageNumber,
         pageText,
         documentContext,
         pageImage: includeImage ? pageImage || undefined : undefined,
         history,
-        modelPreference,
-        allowFallback,
-      });
+      };
+      let result;
+      if (modelPreference === 'custom' && activeConnection) {
+        try {
+          result = { ...(await askCustomAI({ ...request, connection: activeConnection })), requestedModel: 'custom' as const, fallbackUsed: false };
+        } catch (customError) {
+          if (!allowFallback) throw customError;
+          const fallback = await askAIAboutPage({ ...request, modelPreference: 'auto', allowFallback: true });
+          result = { ...fallback, requestedModel: 'custom' as const, fallbackUsed: true };
+        }
+      } else {
+        result = await askAIAboutPage({ ...request, modelPreference, allowFallback });
+      }
       onAddInteraction({
         id: uuidv4(),
         prompt: text.trim(),
@@ -126,6 +179,25 @@ export function AIAssistant({
     } catch {
       setError('The answer could not be copied automatically.');
     }
+  };
+
+  const activeConnection = connections.find((connection) => connection.id === selectedConnectionId) || null;
+
+  const saveConnection = (connection: CustomAIConnection) => {
+    setConnections((current) => current.some((item) => item.id === connection.id)
+      ? current.map((item) => item.id === connection.id ? connection : item)
+      : [...current, connection]);
+  };
+
+  const deleteConnection = (id: string) => {
+    setConnections((current) => {
+      const next = current.filter((item) => item.id !== id);
+      if (selectedConnectionId === id) {
+        setSelectedConnectionId(next[0]?.id || null);
+        if (next.length === 0) setModelPreference('auto');
+      }
+      return next;
+    });
   };
 
   return (
@@ -186,9 +258,17 @@ export function AIAssistant({
           <label className="flex items-center gap-2 text-xs text-slate-600">
             <Bot size={14} className="text-indigo-600" />
             <span className="sr-only">AI model</span>
-            <select value={modelPreference} onChange={(event) => setModelPreference(event.target.value as AIModelPreference)} className="max-w-48 bg-white border border-slate-200 rounded-md px-2 py-1.5 text-xs text-slate-700 focus:border-indigo-500">
+            <select value={modelPreference === 'custom' && activeConnection ? `custom:${activeConnection.id}` : modelPreference} onChange={(event) => {
+              const value = event.target.value;
+              if (value.startsWith('custom:')) {
+                setSelectedConnectionId(value.slice(7));
+                setModelPreference('custom');
+              } else setModelPreference(value as AIModelPreference);
+            }} className="max-w-48 bg-white border border-slate-200 rounded-md px-2 py-1.5 text-xs text-slate-700 focus:border-indigo-500">
               {modelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              {connections.map((connection) => <option key={connection.id} value={`custom:${connection.id}`}>{connection.name}</option>)}
             </select>
+            <button type="button" onClick={() => setConnectionsOpen(true)} className="p-1.5 rounded-md border border-slate-200 text-slate-500 hover:text-indigo-700 hover:border-indigo-300" title="Manage API keys" aria-label="Manage API keys"><KeyRound size={14} /></button>
           </label>
           <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
             <input type="checkbox" checked={allowFallback} onChange={(event) => setAllowFallback(event.target.checked)} className="accent-indigo-600" />
@@ -222,6 +302,15 @@ export function AIAssistant({
         promptQuestion={insertModalState.promptQuestion}
         aiResponse={insertModalState.aiResponse}
         onConfirmInsert={onInsertToNotes}
+      />
+      <AIConnectionsModal
+        isOpen={connectionsOpen}
+        connections={connections}
+        selectedId={selectedConnectionId}
+        onSelect={(id) => { setSelectedConnectionId(id); setModelPreference('custom'); }}
+        onSave={saveConnection}
+        onDelete={deleteConnection}
+        onClose={() => setConnectionsOpen(false)}
       />
     </div>
   );
