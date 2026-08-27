@@ -193,7 +193,7 @@ export function stripMarkdown(text: string): string {
  */
 export async function exportStudyPackPDF(
   documentTitle: string,
-  fileData: string,
+  fileData: string | Blob,
   notes: Record<number, PageNote>,
   annotations: Record<number, AnnotationStroke[]>,
   onProgress?: (progressText: string) => void
@@ -202,7 +202,10 @@ export async function exportStudyPackPDF(
   pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
   if (onProgress) onProgress("Loading document...");
-  const loadingTask = pdfjsLib.getDocument(fileData);
+  const source = fileData instanceof Blob
+    ? { data: new Uint8Array(await fileData.arrayBuffer()) }
+    : fileData;
+  const loadingTask = pdfjsLib.getDocument(source);
   const pdf = await loadingTask.promise;
 
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });

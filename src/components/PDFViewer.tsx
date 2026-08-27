@@ -10,7 +10,7 @@ import 'react-pdf/dist/Page/TextLayer.css';
 pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
 interface PDFViewerProps {
-  file: string;
+  file: string | Blob;
   pageNumber: number;
   setPageNumber: (page: number) => void;
   onPageRenderSuccess: (base64Image: string) => void;
@@ -382,12 +382,12 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
                 setSearchResults([]);
                 setActiveSearchResult(-1);
               }}
-              placeholder="Search PDF"
+              placeholder="Search document"
               className="w-full pl-8 pr-7 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:border-indigo-500"
             />
-            {isSearching ? <Loader2 size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-indigo-500" /> : searchQuery && <button type="button" onClick={() => { setSearchQuery(''); setSearchResults([]); setActiveSearchResult(-1); setHasSearched(false); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" aria-label="Clear PDF search"><X size={14} /></button>}
+            {isSearching ? <Loader2 size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-indigo-500" /> : searchQuery && <button type="button" onClick={() => { setSearchQuery(''); setSearchResults([]); setActiveSearchResult(-1); setHasSearched(false); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" aria-label="Clear document search"><X size={14} /></button>}
           </label>
-          <button type="submit" disabled={!searchQuery.trim() || !pdfDocument || isSearching} className="p-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40" title="Search PDF" aria-label="Search PDF"><Search size={15} /></button>
+          <button type="submit" disabled={!searchQuery.trim() || !pdfDocument || isSearching} className="p-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40" title="Search document" aria-label="Search document"><Search size={15} /></button>
           {searchResults.length > 0 && (
             <div className="flex items-center gap-0.5 text-[11px] text-slate-500 whitespace-nowrap">
               <button type="button" onClick={() => moveSearchResult(-1)} className="p-1 hover:bg-slate-100 rounded" aria-label="Previous search result"><ChevronLeft size={14} /></button>
@@ -422,7 +422,7 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
           <Document
             file={file}
             onLoadSuccess={onDocumentLoadSuccess}
-            onLoadError={(error) => { console.error('PDF load failed', error); setLoadError('This PDF could not be opened. It may be damaged or password protected.'); }}
+            onLoadError={(error) => { console.error('Document load failed', error); setLoadError('This document could not be opened. It may be damaged or password protected.'); }}
             loading={
               <div className="flex items-center justify-center h-80 text-slate-500 text-sm font-medium">
                 Loading document pages...

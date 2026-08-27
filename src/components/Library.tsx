@@ -1,7 +1,8 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { BookOpen, ChevronRight, Clock, FileText, Pencil, Search, Trash2, Upload, X } from 'lucide-react';
+import { BookOpen, ChevronRight, Clock, FileText, Loader2, Pencil, Search, Trash2, Upload, X } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { AccountIdentity, AccountSummary, StudyDocument } from '../types';
+import { DOCUMENT_ACCEPT, prepareStudyFile } from '../utils/documentImport';
 
 interface LibraryProps {
   documents: StudyDocument[];
@@ -12,13 +13,12 @@ interface LibraryProps {
   account: AccountSummary | AccountIdentity | null;
 }
 
-const MAX_PDF_BYTES = 50 * 1024 * 1024;
-
 export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocument, onUpdateDocument }: LibraryProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [query, setQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
 
@@ -29,38 +29,31 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }, [documents, query]);
 
-  const processFile = (file: File) => {
+  const processFile = async (file: File) => {
+    if (isImporting) return;
     setError(null);
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-      setError('Choose a PDF file.');
-      return;
-    }
-    if (file.size > MAX_PDF_BYTES) {
-      setError('This PDF is larger than 50 MB. Choose a smaller file for reliable local storage.');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onerror = () => setError('The file could not be read. Try selecting it again.');
-    reader.onload = (event) => {
-      const fileData = event.target?.result;
-      if (typeof fileData !== 'string') {
-        setError('The file could not be prepared for the study workspace.');
-        return;
-      }
+    setIsImporting(true);
+    try {
+      if (file.size > 50 * 1024 * 1024) void navigator.storage?.persist?.();
+      const prepared = await prepareStudyFile(file);
       const now = Date.now();
       const newDocument: StudyDocument = {
         id: uuidv4(),
-        title: file.name.replace(/\.pdf$/i, ''),
-        fileData,
+        title: file.name.replace(/\.[^.]+$/, ''),
+        fileData: prepared.fileData,
+        sourceFormat: prepared.sourceFormat,
+        originalFileName: file.name,
         totalPages: 0,
         createdAt: now,
         updatedAt: now,
       };
       onAddDocument(newDocument);
       onOpenDocument(newDocument);
-    };
-    reader.readAsDataURL(file);
+    } catch (fileError) {
+      setError(fileError instanceof Error ? fileError.message : 'The document could not be prepared for the study workspace.');
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   const commitRename = (document: StudyDocument) => {
@@ -77,7 +70,7 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
             <span className="w-9 h-9 rounded-lg bg-indigo-600 text-white grid place-items-center shrink-0"><BookOpen size={19} /></span>
             <div className="min-w-0">
               <p className="font-semibold text-slate-900 leading-tight">Study Assistant</p>
-              <p className="text-xs text-slate-500 truncate">PDF study workspace</p>
+              <p className="text-xs text-slate-500 truncate">Document study workspace</p>
             </div>
           </div>
         </div>
@@ -86,7 +79,7 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         <section className="mb-8 max-w-3xl border-l-4 border-indigo-600 pl-5 sm:pl-6 py-1">
           <h1 className="text-2xl sm:text-3xl font-semibold text-slate-950">Your study library</h1>
-          <p className="mt-2 text-sm sm:text-base leading-relaxed text-slate-600">Turn every PDF into a focused study space. Read the page, build notes that stay connected to it, and ask the assistant questions without losing your place.</p>
+          <p className="mt-2 text-sm sm:text-base leading-relaxed text-slate-600">Turn PDFs, Word files, and class notes into a focused study space. Read each page, build connected notes, and ask the assistant questions without losing your place.</p>
         </section>
 
         {error && (
@@ -103,14 +96,17 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
           onDrop={(event) => { event.preventDefault(); setIsDragging(false); const file = event.dataTransfer.files?.[0]; if (file) processFile(file); }}
         >
           <Upload size={26} className="mx-auto text-indigo-600" />
-          <h2 className="mt-3 text-lg font-semibold text-slate-900">Add a PDF</h2>
-          <p className="mt-1 text-sm text-slate-500">Drop a file here or browse from your device. Maximum 50 MB.</p>
-          <button type="button" onClick={() => fileInputRef.current?.click()} className="mt-5 px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 text-sm">Select PDF</button>
+          <h2 className="mt-3 text-lg font-semibold text-slate-900">Add a document</h2>
+          <p className="mt-1 text-sm text-slate-500">PDF, Word, text, Markdown, HTML, RTF, and CSV files are supported.</p>
+          <button type="button" disabled={isImporting} onClick={() => fileInputRef.current?.click()} className="mt-5 inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 text-sm disabled:opacity-60">
+            {isImporting && <Loader2 size={15} className="animate-spin" />}
+            {isImporting ? 'Preparing document…' : 'Select document'}
+          </button>
           <input
             type="file"
             ref={fileInputRef}
             onChange={(event) => { const file = event.target.files?.[0]; if (file) processFile(file); event.target.value = ''; }}
-            accept="application/pdf,.pdf"
+            accept={DOCUMENT_ACCEPT}
             className="hidden"
           />
         </section>
@@ -130,7 +126,7 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
             <div className="py-12 text-center border-t border-slate-200">
               <FileText size={28} className="mx-auto text-slate-300" />
               <p className="mt-3 text-sm font-medium text-slate-700">No documents yet</p>
-              <p className="mt-1 text-sm text-slate-500">Your uploaded PDFs will appear here.</p>
+              <p className="mt-1 text-sm text-slate-500">Your uploaded documents will appear here.</p>
             </div>
           ) : filteredDocuments.length === 0 ? (
             <div className="py-10 text-center border-t border-slate-200 text-sm text-slate-500">No documents match “{query}”.</div>
@@ -148,7 +144,7 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
                       ) : (
                         <button type="button" onClick={() => onOpenDocument(document)} className="block w-full text-left">
                           <h3 className="font-medium text-slate-900 truncate" title={document.title}>{document.title}</h3>
-                          <p className="mt-1 text-xs text-slate-500">{document.totalPages > 0 ? `${document.totalPages} pages · ` : ''}Updated {new Date(document.updatedAt).toLocaleDateString()}</p>
+                          <p className="mt-1 text-xs text-slate-500">{document.sourceFormat ? `${document.sourceFormat} · ` : ''}{document.totalPages > 0 ? `${document.totalPages} pages · ` : ''}Updated {new Date(document.updatedAt).toLocaleDateString()}</p>
                         </button>
                       )}
                     </div>

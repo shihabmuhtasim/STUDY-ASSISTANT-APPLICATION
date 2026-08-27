@@ -265,11 +265,11 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
                 layoutMode === 'pdf-only' ? 'bg-white text-indigo-700 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
               }`}
-              title="PDF Reader Full Screen"
+              title="Document Reader Full Screen"
             >
               <Eye size={14} />
-              <span className="hidden md:inline">PDF Focus</span>
-              <span className="md:hidden">PDF</span>
+              <span className="hidden md:inline">Document Focus</span>
+              <span className="md:hidden">Document</span>
             </button>
           </div>
 
@@ -299,7 +299,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
             }`}
           >
             <BookOpen size={16} />
-            <span>PDF Reader</span>
+            <span>Document Reader</span>
           </button>
 
           <button
@@ -336,7 +336,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
       {/* Main Workspace Body */}
       <main className="flex-1 overflow-hidden p-2 lg:p-3 relative">
         {layoutMode === 'pdf-only' ? (
-          /* PDF Reader Full Screen */
+          /* Document Reader Full Screen */
           <div className="h-full w-full p-1">
             <PDFViewer {...pdfViewerProps} />
           </div>

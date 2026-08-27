@@ -1,7 +1,9 @@
 export interface StudyDocument {
   id: string;
   title: string;
-  fileData: string; // Base64 encoded PDF
+  fileData: string | Blob; // Legacy data URL or locally stored PDF Blob
+  sourceFormat?: string;
+  originalFileName?: string;
   totalPages: number;
   createdAt: number;
   updatedAt: number;
