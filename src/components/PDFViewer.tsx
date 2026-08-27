@@ -15,12 +15,14 @@ interface PDFViewerProps {
   setPageNumber: (page: number) => void;
   onPageRenderSuccess: (base64Image: string) => void;
   onPageTextReady: (text: string) => void;
+  onDocumentContextReady: (text: string) => void;
+  onDocumentContextLoadingChange: (loading: boolean) => void;
   onDocumentLoaded: (totalPages: number) => void;
   annotations: AnnotationStroke[];
   onAnnotationsChange: (strokes: AnnotationStroke[]) => void;
 }
 
-export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess, onPageTextReady, onDocumentLoaded, annotations, onAnnotationsChange }: PDFViewerProps) {
+export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess, onPageTextReady, onDocumentContextReady, onDocumentContextLoadingChange, onDocumentLoaded, annotations, onAnnotationsChange }: PDFViewerProps) {
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [scale, setScale] = useState(1.0);
@@ -93,6 +95,31 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
       });
     return () => { cancelled = true; };
   }, [extractPageText, onPageTextReady, pageNumber, pdfDocument]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!pdfDocument) return;
+    const buildDocumentContext = async () => {
+      onDocumentContextLoadingChange(true);
+      onDocumentContextReady('');
+      const pageBudget = Math.max(40, Math.min(2_000, Math.floor(48_000 / pdfDocument.numPages) - 20));
+      const pages: string[] = [];
+      try {
+        for (let page = 1; page <= pdfDocument.numPages; page += 1) {
+          if (cancelled) return;
+          const text = await extractPageText(page);
+          pages.push(`[Page ${page}] ${text.slice(0, pageBudget)}`);
+        }
+        if (!cancelled) onDocumentContextReady(pages.join('\n').slice(0, 48_000));
+      } catch (error) {
+        console.error('Failed to prepare document context', error);
+      } finally {
+        if (!cancelled) onDocumentContextLoadingChange(false);
+      }
+    };
+    void buildDocumentContext();
+    return () => { cancelled = true; };
+  }, [extractPageText, onDocumentContextLoadingChange, onDocumentContextReady, pdfDocument]);
 
   function onDocumentLoadSuccess(pdf: PDFDocumentProxy) {
     setPdfDocument(pdf);

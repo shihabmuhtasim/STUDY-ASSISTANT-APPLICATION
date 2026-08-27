@@ -22,6 +22,8 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   const [pageNumber, setPageNumber] = useState(1);
   const [pageImage, setPageImage] = useState<string | null>(null);
   const [pageText, setPageText] = useState('');
+  const [documentContext, setDocumentContext] = useState('');
+  const [isDocumentContextLoading, setIsDocumentContextLoading] = useState(true);
   const [notes, setNotes] = useState<Record<number, PageNote>>({});
   const [isNotesLoaded, setIsNotesLoaded] = useState(false);
   const [annotations, setAnnotations] = useState<Record<number, AnnotationStroke[]>>({});
@@ -172,6 +174,8 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     setPageNumber,
     onPageRenderSuccess: setPageImage,
     onPageTextReady: setPageText,
+    onDocumentContextReady: setDocumentContext,
+    onDocumentContextLoadingChange: setIsDocumentContextLoading,
     onDocumentLoaded: handleDocumentLoaded,
     annotations: annotations[pageNumber] || [],
     onAnnotationsChange: (strokes: AnnotationStroke[]) => setAnnotations((current) => ({ ...current, [pageNumber]: strokes })),
@@ -181,6 +185,8 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     pageNumber,
     pageImage,
     pageText,
+    documentContext,
+    isDocumentContextLoading,
     history: currentNote.aiHistory || [],
     account,
     onRemainingChange: handleRemainingChange,

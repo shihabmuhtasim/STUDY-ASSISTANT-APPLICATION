@@ -10,6 +10,8 @@ interface AIAssistantProps {
   pageNumber: number;
   pageImage: string | null;
   pageText: string;
+  documentContext: string;
+  isDocumentContextLoading: boolean;
   history: AIInteraction[];
   account: AccountSummary | AccountIdentity | null;
   onRemainingChange: (remaining: number) => void;
@@ -39,6 +41,8 @@ export function AIAssistant({
   pageNumber,
   pageImage,
   pageText,
+  documentContext,
+  isDocumentContextLoading,
   history,
   onAddInteraction,
   onInsertToNotes,
@@ -72,7 +76,7 @@ export function AIAssistant({
   }, [pageNumber, pageText]);
 
   const handleAsk = async (text: string) => {
-    if (!text.trim() || isLoading) return;
+    if (!text.trim() || isLoading || isDocumentContextLoading) return;
     if (!pageText.trim() && !pageImage) {
       setError('The page is still being prepared. Try again in a moment.');
       return;
@@ -86,6 +90,7 @@ export function AIAssistant({
         prompt: text.trim(),
         pageNumber,
         pageText,
+        documentContext,
         pageImage: includeImage ? pageImage || undefined : undefined,
         history,
         modelPreference,
@@ -127,7 +132,7 @@ export function AIAssistant({
           <Sparkles size={18} className="text-indigo-600 shrink-0" />
           <h3 className="font-medium text-slate-800 text-sm truncate">AI Page Assistant</h3>
         </div>
-        <span className="text-xs font-medium text-slate-500 whitespace-nowrap">Page-aware</span>
+        <span className="text-xs font-medium text-slate-500 whitespace-nowrap">Document-aware</span>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
@@ -138,7 +143,7 @@ export function AIAssistant({
             <p className="text-xs text-slate-500 mt-1">Answers are grounded in this page's text and optional page image.</p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
               {quickPrompts.map((item) => (
-                <button key={item} type="button" onClick={() => handleAsk(item)} className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-700 hover:border-indigo-300 hover:text-indigo-700">{item}</button>
+                <button key={item} type="button" onClick={() => handleAsk(item)} disabled={isDocumentContextLoading} className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-700 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-40">{item}</button>
               ))}
             </div>
           </div>
@@ -164,6 +169,7 @@ export function AIAssistant({
       </div>
 
       <div className="p-3 border-t border-slate-100 bg-white shrink-0">
+        {isDocumentContextLoading && <p className="mb-2 flex items-center gap-2 text-xs text-slate-500"><Loader2 size={13} className="animate-spin text-indigo-600" />Indexing the whole document…</p>}
         {error && <p role="alert" className="mb-2 text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <label className="flex items-center gap-2 text-xs text-slate-600">
@@ -190,12 +196,12 @@ export function AIAssistant({
             type="text"
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
-            placeholder="Ask about this page…"
-            disabled={isLoading}
+            placeholder={isDocumentContextLoading ? 'Preparing document context…' : 'Ask about this page or the whole document…'}
+            disabled={isLoading || isDocumentContextLoading}
             maxLength={4000}
             className="w-full pl-4 pr-11 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs sm:text-sm focus:border-indigo-500 disabled:opacity-60"
           />
-          <button type="submit" disabled={!prompt.trim() || isLoading} className="absolute right-2 p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30" aria-label="Send question"><Send size={18} /></button>
+          <button type="submit" disabled={!prompt.trim() || isLoading || isDocumentContextLoading} className="absolute right-2 p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30" aria-label="Send question"><Send size={18} /></button>
         </form>
       </div>
 

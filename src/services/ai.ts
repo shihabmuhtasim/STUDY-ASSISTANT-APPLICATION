@@ -10,6 +10,7 @@ export async function askAIAboutPage(input: {
   prompt: string;
   pageNumber: number;
   pageText: string;
+  documentContext: string;
   pageImage?: string;
   history: AIInteraction[];
   modelPreference: AIModelPreference;
@@ -22,6 +23,7 @@ export async function askAIAboutPage(input: {
       prompt: input.prompt,
       pageNumber: input.pageNumber,
       pageText: input.pageText,
+      documentText: input.documentContext,
       pageImage: input.pageImage,
       history: input.history.slice(-4).map((item) => ({ prompt: item.prompt, response: item.response })),
       modelPreference: input.modelPreference,

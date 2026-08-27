@@ -2,10 +2,10 @@ import { env } from 'cloudflare:workers';
 
 export type AIHistoryItem = { prompt: string; response: string };
 export type AIModelPreference = 'auto' | 'gemini-flash' | 'gemini-flash-lite' | 'qwen' | 'llama';
-export type AIRequest = { prompt: string; pageNumber: number; pageText?: string; pageImage?: string; history?: AIHistoryItem[]; modelPreference?: AIModelPreference; allowFallback?: boolean };
+export type AIRequest = { prompt: string; pageNumber: number; pageText?: string; documentText?: string; pageImage?: string; history?: AIHistoryItem[]; modelPreference?: AIModelPreference; allowFallback?: boolean };
 type AIResult = { text: string; provider: 'cloudflare' | 'gemini' | 'local'; model: string; requestedModel?: AIModelPreference; fallbackUsed?: boolean };
 
-const SYSTEM_PROMPT = `You are a careful, capable study assistant. Answer only from the supplied PDF page context. If the page does not contain the answer, say so clearly. Preserve important names, numbers, formulas, and qualifications. Explain concepts in plain language, organize longer answers with short headings and bullets, and cite the supplied PDF page number when referring to evidence. Match the student's requested language.`;
+const SYSTEM_PROMPT = `You are a careful, capable study assistant working from a supplied PDF. Focus first on the current page and explain it in the context of the whole document. Use other pages when the question requires background, comparison, or information not repeated on the current page. If the document does not contain the answer, say so clearly. Preserve important names, numbers, formulas, and qualifications. Explain concepts in plain language, organize longer answers with short headings and bullets, and cite page numbers when referring to evidence. Match the student's requested language.`;
 const GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash-lite'];
 const TEXT_MODELS = [
   '@cf/qwen/qwen3-30b-a3b-fp8',
@@ -193,7 +193,8 @@ function readModelText(output: unknown) {
 function buildContext(request: AIRequest) {
   const history = (request.history || []).slice(-3).map((item) => `Student: ${item.prompt}\nAssistant: ${item.response}`).join('\n\n');
   const pageText = request.pageText?.trim() ? request.pageText.slice(0, 12_000) : '[No selectable text was extracted from this page. Use the page image if supplied.]';
-  return `PDF page: ${request.pageNumber}\n\nExtracted page text:\n${pageText}${history ? `\n\nRecent conversation:\n${history}` : ''}\n\nStudent question:\n${request.prompt}`;
+  const documentText = request.documentText?.trim() ? request.documentText.slice(0, 48_000) : '[Whole-document text is unavailable.]';
+  return `Current PDF page: ${request.pageNumber}\n\nCurrent page text (primary focus):\n${pageText}\n\nWhole PDF context (consult when useful):\n${documentText}${history ? `\n\nRecent conversation on page ${request.pageNumber}:\n${history}` : ''}\n\nStudent question:\n${request.prompt}`;
 }
 
 function modelList(value: string | undefined, defaults: string[]) {
