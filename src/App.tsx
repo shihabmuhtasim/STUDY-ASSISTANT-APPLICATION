@@ -11,6 +11,10 @@ import dynamic from 'next/dynamic';
 import { AccountIdentity, AccountSummary, StudyDocument } from './types';
 import { get, set, del } from 'idb-keyval';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
+import { SiteNavigation } from './components/SiteNavigation';
+import { SiteInfoModal } from './components/SiteInfoModal';
+import { AuthModal } from './components/AuthModal';
+import { accountFromSupabaseUser, signOutAccount, supabase } from './services/auth';
 
 const StudyInterface = dynamic(
   () => import('./components/StudyInterface').then((module) => module.StudyInterface),
@@ -24,9 +28,10 @@ interface AppProps {
 export default function App({ initialAccount }: AppProps) {
   const [documents, setDocuments] = useState<StudyDocument[]>([]);
   const [currentDocument, setCurrentDocument] = useState<StudyDocument | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [account, setAccount] = useState<AccountSummary | AccountIdentity | null>(initialAccount);
   const [storageError, setStorageError] = useState<string | null>(null);
+  const [infoView, setInfoView] = useState<'plans' | 'contact' | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
 
   const refreshAccount = useCallback(async () => {
     if (!initialAccount) return;
@@ -50,8 +55,6 @@ export default function App({ initialAccount }: AppProps) {
       } catch (e) {
         console.error("Failed to load documents from IndexedDB", e);
         setStorageError('Local storage is unavailable. New documents may not persist after you close this tab.');
-      } finally {
-        setIsLoading(false);
       }
     }
     loadDocs();
@@ -60,6 +63,17 @@ export default function App({ initialAccount }: AppProps) {
   useEffect(() => {
     refreshAccount();
   }, [refreshAccount]);
+
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) setAccount(accountFromSupabaseUser(data.user));
+    }).catch(() => undefined);
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAccount(session?.user ? accountFromSupabaseUser(session.user) : null);
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
 
   const handleAddDocument = async (doc: StudyDocument) => {
     const newDocs = [...documents, doc];
@@ -97,19 +111,24 @@ export default function App({ initialAccount }: AppProps) {
     }
   };
 
-  if (isLoading) {
-    return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500">Loading...</div>;
-  }
-
   return (
     <AppErrorBoundary>
-      <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+      <div className={`${currentDocument ? 'h-screen overflow-hidden' : 'min-h-screen'} flex flex-col bg-slate-50 font-sans text-slate-900`}>
+      <SiteNavigation
+        account={account}
+        onLibrary={() => setCurrentDocument(null)}
+        onPlans={() => setInfoView('plans')}
+        onContact={() => setInfoView('contact')}
+        onAuth={() => setAuthOpen(true)}
+        onSignOut={() => { signOutAccount().catch(() => undefined); setAccount(null); }}
+      />
       {storageError && (
         <div role="alert" className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center text-sm text-amber-900">
           {storageError}
           <button type="button" onClick={() => setStorageError(null)} className="ml-3 font-semibold underline">Dismiss</button>
         </div>
       )}
+      <div className={currentDocument ? 'min-h-0 flex-1' : 'flex-1'}>
       {currentDocument ? (
         <StudyInterface
           document={currentDocument}
@@ -128,6 +147,9 @@ export default function App({ initialAccount }: AppProps) {
           account={account}
         />
       )}
+      </div>
+      <SiteInfoModal view={infoView} onClose={() => setInfoView(null)} />
+      <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} onAuthenticated={setAccount} />
       </div>
     </AppErrorBoundary>
   );

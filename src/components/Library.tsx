@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { BookOpen, ChevronRight, Clock, FileText, Loader2, Pencil, Search, Trash2, Upload, X } from 'lucide-react';
+import { ChevronRight, Clock, FileText, Loader2, NotebookPen, Pencil, Search, ShieldCheck, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { AccountIdentity, AccountSummary, StudyDocument } from '../types';
 import { DOCUMENT_ACCEPT, prepareStudyFile } from '../utils/documentImport';
@@ -64,23 +64,22 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="w-9 h-9 rounded-lg bg-indigo-600 text-white grid place-items-center shrink-0"><BookOpen size={19} /></span>
-            <div className="min-w-0">
-              <p className="font-semibold text-slate-900 leading-tight">Study Assistant</p>
-              <p className="text-xs text-slate-500 truncate">Document study workspace</p>
-            </div>
+      <section className="border-b border-slate-200 bg-white">
+        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+          <div className="max-w-3xl">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase text-indigo-700"><Sparkles size={15} />Focused study workspace</div>
+            <h1 className="mt-3 text-3xl font-semibold text-slate-950 sm:text-4xl">Your study library</h1>
+            <p className="mt-3 text-sm leading-relaxed text-slate-600 sm:text-base">Open a document beside page-linked notes and ask the assistant about the exact material you are reading, with the wider document available for context.</p>
+          </div>
+          <div className="mt-7 grid max-w-3xl grid-cols-1 gap-3 border-t border-slate-200 pt-5 sm:grid-cols-3">
+            <div className="flex items-center gap-2.5 text-sm text-slate-600"><FileText size={18} className="text-indigo-600" />PDF and Word support</div>
+            <div className="flex items-center gap-2.5 text-sm text-slate-600"><NotebookPen size={18} className="text-emerald-600" />Page-linked notes</div>
+            <div className="flex items-center gap-2.5 text-sm text-slate-600"><ShieldCheck size={18} className="text-amber-600" />Local document storage</div>
           </div>
         </div>
-      </header>
+      </section>
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-        <section className="mb-8 max-w-3xl border-l-4 border-indigo-600 pl-5 sm:pl-6 py-1">
-          <h1 className="text-2xl sm:text-3xl font-semibold text-slate-950">Your study library</h1>
-          <p className="mt-2 text-sm sm:text-base leading-relaxed text-slate-600">Turn PDFs, Word files, and class notes into a focused study space. Read each page, build connected notes, and ask the assistant questions without losing your place.</p>
-        </section>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
 
         {error && (
           <div role="alert" className="mb-5 flex items-center justify-between gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
@@ -90,12 +89,12 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
         )}
 
         <section
-          className={`border-2 border-dashed rounded-lg p-7 sm:p-10 text-center transition-colors ${isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-slate-300 bg-white'}`}
+          className={`border-2 border-dashed rounded-lg p-7 sm:p-10 text-center transition-colors ${isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-slate-300 bg-white shadow-sm'}`}
           onDragOver={(event) => { event.preventDefault(); setIsDragging(true); }}
           onDragLeave={() => setIsDragging(false)}
           onDrop={(event) => { event.preventDefault(); setIsDragging(false); const file = event.dataTransfer.files?.[0]; if (file) processFile(file); }}
         >
-          <Upload size={26} className="mx-auto text-indigo-600" />
+          <span className="mx-auto grid h-12 w-12 place-items-center rounded-lg bg-indigo-50 text-indigo-700"><Upload size={24} /></span>
           <h2 className="mt-3 text-lg font-semibold text-slate-900">Add a document</h2>
           <p className="mt-1 text-sm text-slate-500">PDF, Word, text, Markdown, HTML, RTF, and CSV files are supported.</p>
           <button type="button" disabled={isImporting} onClick={() => fileInputRef.current?.click()} className="mt-5 inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 text-sm disabled:opacity-60">

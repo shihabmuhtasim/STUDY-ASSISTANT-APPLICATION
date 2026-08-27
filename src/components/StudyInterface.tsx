@@ -214,7 +214,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 overflow-hidden font-sans">
+    <div className="flex h-full flex-col overflow-hidden bg-slate-50 font-sans">
       {/* Top Header */}
       <header className="flex items-center justify-between px-3 lg:px-6 py-2.5 bg-white border-b border-slate-200 shadow-2xs z-30 shrink-0 gap-2">
         <div className="flex items-center gap-2 sm:gap-3">
