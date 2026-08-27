@@ -48,6 +48,7 @@ export function AIAssistant({
   onInsertToNotes,
 }: AIAssistantProps) {
   const [prompt, setPrompt] = useState('');
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +84,7 @@ export function AIAssistant({
     }
 
     setIsLoading(true);
+    setPendingPrompt(text.trim());
     setError(null);
     setPrompt('');
     try {
@@ -111,6 +113,7 @@ export function AIAssistant({
       if (requestError instanceof AIRequestError) setError(requestError.message);
       else setError('The AI assistant could not answer right now. Try again.');
     } finally {
+      setPendingPrompt(null);
       setIsLoading(false);
     }
   };
@@ -165,7 +168,15 @@ export function AIAssistant({
           ))
         )}
 
-        {isLoading && <div className="flex items-center gap-2 text-sm text-slate-600"><Loader2 size={16} className="animate-spin text-indigo-600" />Analyzing page {pageNumber}…</div>}
+        {pendingPrompt && (
+          <div className="space-y-3" aria-live="polite">
+            <div className="flex justify-end"><div className="bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-medium max-w-[85%]">{pendingPrompt}</div></div>
+            <div className="flex items-center gap-2 bg-indigo-50/70 border border-indigo-100 rounded-lg px-4 py-3 text-sm text-indigo-800">
+              <Loader2 size={16} className="animate-spin text-indigo-600" />
+              <span>Thinking about page {pageNumber} and the document…</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="p-3 border-t border-slate-100 bg-white shrink-0">

@@ -123,13 +123,17 @@ async function runGemini(request: AIRequest, requestedModels?: string[]): Promis
         },
         body: JSON.stringify({
           contents: [{ role: 'user', parts }],
-          generationConfig: { maxOutputTokens: 900, temperature: 0.2 },
+          generationConfig: {
+            maxOutputTokens: 3_000,
+            thinkingConfig: { thinkingLevel: 'minimal' },
+          },
         }),
       }, Math.max(2_500, Math.min(6_500, providerDeadline - Date.now())));
       if (!response.ok) throw new Error(`GEMINI_${response.status}`);
-      const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+      const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }> };
       const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('').trim();
       if (!text) throw new Error('AI_EMPTY_RESPONSE');
+      if (data.candidates?.[0]?.finishReason === 'MAX_TOKENS') throw new Error('GEMINI_TRUNCATED_RESPONSE');
       return { text, provider: 'gemini', model };
     } catch (error) {
       lastError = error;
