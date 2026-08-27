@@ -90,6 +90,107 @@ async function textToPdf(text: string) {
   return pdf.output('blob');
 }
 
+async function waitForRenderedAssets(container: HTMLElement) {
+  await document.fonts?.ready;
+  const images = Array.from(container.querySelectorAll('img'));
+  await Promise.all(images.map(async (image) => {
+    if (image.complete) {
+      await image.decode?.().catch(() => undefined);
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      image.addEventListener('load', () => resolve(), { once: true });
+      image.addEventListener('error', () => resolve(), { once: true });
+      window.setTimeout(resolve, 3_000);
+    });
+  }));
+}
+
+async function renderedPagesToPdf(pages: HTMLElement[]) {
+  const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+    import('html2canvas'),
+    import('jspdf'),
+  ]);
+  let pdf: InstanceType<typeof jsPDF> | null = null;
+
+  for (const [index, page] of pages.entries()) {
+    const canvas = await html2canvas(page, {
+      backgroundColor: '#ffffff',
+      logging: false,
+      scale: Math.min(2, Math.max(1.4, window.devicePixelRatio || 1)),
+      useCORS: true,
+    });
+    const width = canvas.width * 0.75;
+    const height = canvas.height * 0.75;
+    const orientation = width > height ? 'landscape' : 'portrait';
+
+    if (!pdf) pdf = new jsPDF({ unit: 'pt', format: [width, height], orientation });
+    else pdf.addPage([width, height], orientation);
+
+    const pageText = (page.innerText || page.textContent || '').replace(/\s+/g, ' ').trim();
+    if (pageText) {
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(4);
+      pdf.setTextColor(255, 255, 255);
+      pdf.text(pdf.splitTextToSize(pageText, Math.max(20, width - 8)), 4, 5);
+    }
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.94), 'JPEG', 0, 0, width, height, undefined, 'FAST');
+    if (index % 2 === 1) await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+  }
+
+  if (!pdf) throw new Error('No readable pages were found in this Word document.');
+  return pdf.output('blob');
+}
+
+async function wordToPdf(file: File, extension: 'doc' | 'docx') {
+  const host = document.createElement('div');
+  host.style.cssText = 'position:fixed;left:-100000px;top:0;background:#fff;z-index:-1;pointer-events:none;';
+  document.body.appendChild(host);
+
+  let dispose: (() => void) | undefined;
+  try {
+    let pages: HTMLElement[] = [];
+    if (extension === 'docx') {
+      const [{ render }, mammoth] = await Promise.all([import('docx-renderer'), import('mammoth')]);
+      const styleHost = document.createElement('div');
+      const bodyHost = document.createElement('div');
+      host.appendChild(styleHost);
+      host.appendChild(bodyHost);
+      const result = await render(file, bodyHost, styleHost, {
+        breakPages: true,
+        ignoreLastRenderedPageBreak: false,
+        useBase64URL: true,
+      });
+      dispose = result.dispose;
+      pages = result.pages.map((page) => page.element);
+
+      // Some Word files omit rendered page-break hints. Keep the visual renderer,
+      // but retain a text conversion fallback if it cannot produce a page.
+      if (pages.length === 0) {
+        const text = (await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value.trim();
+        return textToPdf(text);
+      }
+    } else {
+      const { createMsDocViewer } = await import('msdoc-viewer');
+      const viewer = createMsDocViewer(host);
+      await viewer.load(file);
+      dispose = () => viewer.destroy();
+      pages = Array.from(host.querySelectorAll<HTMLElement>('.msdoc-page:not(.msdoc-page-measure)'));
+      for (const page of pages) {
+        page.style.border = '0';
+        page.style.boxShadow = 'none';
+        page.querySelectorAll('.msdoc-page-guides, .msdoc-page-label').forEach((element) => element.remove());
+      }
+    }
+
+    await waitForRenderedAssets(host);
+    return await renderedPagesToPdf(pages);
+  } finally {
+    dispose?.();
+    host.remove();
+  }
+}
+
 export async function prepareStudyFile(file: File): Promise<PreparedStudyFile> {
   const extension = extensionOf(file.name);
   if (!isSupportedDocument(file)) throw new Error('Choose a PDF, Word, text, Markdown, HTML, RTF, or CSV document.');
@@ -100,11 +201,14 @@ export async function prepareStudyFile(file: File): Promise<PreparedStudyFile> {
 
   let text = '';
   if (extension === 'docx') {
-    const mammoth = await import('mammoth');
-    const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
-    text = result.value.trim();
+    return { fileData: await wordToPdf(file, 'docx'), sourceFormat: 'Word' };
   } else if (extension === 'doc') {
-    text = await extractLegacyDocText(await file.arrayBuffer());
+    try {
+      return { fileData: await wordToPdf(file, 'doc'), sourceFormat: 'Word' };
+    } catch (error) {
+      console.error('Visual .doc rendering failed; using text fallback.', error);
+      text = await extractLegacyDocText(await file.arrayBuffer());
+    }
   } else if (extension === 'html' || extension === 'htm') {
     text = htmlToText(await file.text());
   } else if (extension === 'rtf') {
