@@ -52,22 +52,25 @@ async function fetchProvider(url: string, init: RequestInit) {
 async function askOpenAICompatible(input: CustomAIInput, context: string) {
   if (!/^https:\/\//i.test(input.connection.baseUrl || '')) throw new AIRequestError('Enter a secure API base URL beginning with https://.', 'CUSTOM_ENDPOINT');
   const url = endpoint(input.connection.baseUrl!, '/chat/completions');
-  const userContent: string | Array<Record<string, unknown>> = input.pageImage
+  const nvidiaMultimodalModel = input.connection.service !== 'nvidia' || /(vision|multimodal|omni|muse-glimmer|\bvl\b)/i.test(input.connection.model);
+  const userContent: string | Array<Record<string, unknown>> = input.pageImage && nvidiaMultimodalModel
     ? [{ type: 'text', text: context }, { type: 'image_url', image_url: { url: input.pageImage } }]
     : context;
-  const response = await fetchProvider(url, {
+  const requestBody = JSON.stringify({
+    model: input.connection.model,
+    messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: userContent }],
+    max_tokens: 3_000,
+    temperature: 0.2,
+  });
+  const usesNvidiaRelay = input.connection.service === 'nvidia';
+  const response = await fetchProvider(usesNvidiaRelay ? '/api/ai/nvidia' : url, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${input.connection.apiKey}`,
+      ...(usesNvidiaRelay ? { 'x-nvidia-api-key': input.connection.apiKey } : { authorization: `Bearer ${input.connection.apiKey}` }),
       ...(input.connection.service === 'openrouter' ? { 'HTTP-Referer': window.location.origin, 'X-Title': 'Study Assistant' } : {}),
     },
-    body: JSON.stringify({
-      model: input.connection.model,
-      messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: userContent }],
-      max_tokens: 3_000,
-      temperature: 0.2,
-    }),
+    body: requestBody,
   });
   if (!response.ok) throw new AIRequestError(await providerError(response), `CUSTOM_${response.status}`, response.status);
   const data = await response.json() as { choices?: Array<{ message?: { content?: string | Array<{ text?: string }> } }> };

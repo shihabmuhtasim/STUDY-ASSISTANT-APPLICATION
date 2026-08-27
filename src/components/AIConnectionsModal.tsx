@@ -100,7 +100,7 @@ export function AIConnectionsModal({ isOpen, connections, selectedId, onSelect, 
             <span className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-700 grid place-items-center shrink-0"><KeyRound size={18} /></span>
             <div>
               <h2 id="ai-connections-title" className="font-semibold text-slate-900">Your AI connections</h2>
-              <p className="mt-0.5 text-xs text-slate-500">Keys stay in this browser session and requests go directly to the selected provider.</p>
+              <p className="mt-0.5 text-xs text-slate-500">Keys stay in this browser session. NVIDIA requests use a secure same-site relay because NVIDIA blocks browser connections.</p>
             </div>
           </div>
           <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Close AI connections"><X size={18} /></button>
