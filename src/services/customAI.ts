@@ -27,8 +27,8 @@ function endpoint(baseUrl: string, suffix: string) {
 
 async function providerError(response: Response) {
   try {
-    const data = await response.json() as { error?: string | { message?: string }; message?: string };
-    const message = typeof data.error === 'string' ? data.error : data.error?.message || data.message;
+    const data = await response.json() as { error?: string | { message?: string }; message?: string; detail?: string };
+    const message = typeof data.error === 'string' ? data.error : data.error?.message || data.message || data.detail;
     if (message) return message.slice(0, 400);
   } catch {
     // The provider did not return JSON.
@@ -72,7 +72,12 @@ async function askOpenAICompatible(input: CustomAIInput, context: string) {
     },
     body: requestBody,
   });
-  if (!response.ok) throw new AIRequestError(await providerError(response), `CUSTOM_${response.status}`, response.status);
+  if (!response.ok) {
+    const message = input.connection.service === 'nvidia' && response.status === 401
+      ? 'NVIDIA rejected this API key. Edit the connection and paste the generated key beginning with nvapi-, not the model ID.'
+      : await providerError(response);
+    throw new AIRequestError(message, `CUSTOM_${response.status}`, response.status);
+  }
   const data = await response.json() as { choices?: Array<{ message?: { content?: string | Array<{ text?: string }> } }> };
   const content = data.choices?.[0]?.message?.content;
   const text = typeof content === 'string' ? content : content?.map((part) => part.text || '').join('');

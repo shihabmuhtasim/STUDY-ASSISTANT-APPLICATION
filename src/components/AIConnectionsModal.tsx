@@ -50,7 +50,8 @@ export function AIConnectionsModal({ isOpen, connections, selectedId, onSelect, 
   if (!isOpen) return null;
 
   const service = serviceDetails(draft.service);
-  const canSave = Boolean(draft.apiKey.trim() && draft.model.trim() && (draft.service !== 'custom' || /^https:\/\//i.test(draft.baseUrl.trim())));
+  const hasValidNvidiaKey = draft.service !== 'nvidia' || draft.apiKey.trim().startsWith('nvapi-');
+  const canSave = Boolean(draft.apiKey.trim() && draft.model.trim() && hasValidNvidiaKey && (draft.service !== 'custom' || /^https:\/\//i.test(draft.baseUrl.trim())));
 
   const saveDraft = (event: React.FormEvent) => {
     event.preventDefault();
@@ -83,6 +84,10 @@ export function AIConnectionsModal({ isOpen, connections, selectedId, onSelect, 
   };
 
   const testConnection = async (connection: CustomAIConnection) => {
+    if (connection.service === 'nvidia' && !connection.apiKey.startsWith('nvapi-')) {
+      setTestState({ id: connection.id, status: 'error', message: 'Replace this with the NVIDIA key beginning with nvapi-, not the model ID.' });
+      return;
+    }
     setTestState({ id: connection.id, status: 'testing' });
     try {
       await testCustomAIConnection(connection);
@@ -159,6 +164,7 @@ export function AIConnectionsModal({ isOpen, connections, selectedId, onSelect, 
                   <input required type={showKey ? 'text' : 'password'} value={draft.apiKey} onChange={(event) => setDraft((current) => ({ ...current, apiKey: event.target.value }))} placeholder="Paste your provider API key" autoComplete="off" className="w-full pl-3 pr-10 py-2 border border-slate-200 rounded-md text-sm focus:border-indigo-500" />
                   <button type="button" onClick={() => setShowKey((value) => !value)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700" aria-label={showKey ? 'Hide API key' : 'Show API key'}>{showKey ? <EyeOff size={16} /> : <Eye size={16} />}</button>
                 </span>
+                {draft.service === 'nvidia' && <span className={`mt-1 block text-[11px] ${draft.apiKey && !hasValidNvidiaKey ? 'text-red-700' : 'text-slate-500'}`}>NVIDIA Build keys begin with nvapi-.</span>}
               </label>
               <div className="sm:col-span-2 flex items-center justify-between gap-3 pt-1">
                 <p className="text-[11px] text-slate-500">ChatGPT Plus and Claude Pro do not include API access; use a provider-issued API key.</p>
