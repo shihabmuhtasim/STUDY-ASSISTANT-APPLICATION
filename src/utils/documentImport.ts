@@ -44,30 +44,20 @@ function rtfToText(rtf: string) {
     .trim();
 }
 
-function extractLegacyDocText(buffer: ArrayBuffer) {
-  const clean = (value: string) => value
-    .replace(/[^\x20-\x7E\u00A0-\u024F\n\r\t]+/g, ' ')
-    .replace(/[ \t]{2,}/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-
-  const candidates = [
-    clean(new TextDecoder('windows-1252').decode(buffer)),
-    clean(new TextDecoder('utf-16le').decode(buffer)),
-  ];
-  const best = candidates.sort((a, b) => b.split(/\s+/).length - a.split(/\s+/).length)[0] || '';
-  if (best.length < 40) {
-    throw new Error('This older Word file could not be read. Open it in Word and save it as a .docx file, then upload it again.');
-  }
-  return best;
+async function extractLegacyDocText(buffer: ArrayBuffer) {
+  const module = await import('jsdoc');
+  const docToText = module.default;
+  const text = docToText(buffer)?.trim();
+  if (!text) throw new Error('This older Word file could not be read. Open it in Word and save it as a .docx file, then upload it again.');
+  return text;
 }
 
-async function textToPdf(text: string, title: string) {
+async function textToPdf(text: string) {
   const { default: jsPDF } = await import('jspdf');
   const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 54;
+  const margin = 48;
   const contentWidth = pageWidth - margin * 2;
   const bottom = pageHeight - margin;
   let y = margin;
@@ -78,25 +68,23 @@ async function textToPdf(text: string, title: string) {
   };
 
   pdf.setTextColor('#172033');
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(17);
-  const titleLines = pdf.splitTextToSize(title, contentWidth) as string[];
-  pdf.text(titleLines, margin, y);
-  y += titleLines.length * 21 + 18;
-
   pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(11);
-  pdf.setLineHeightFactor(1.45);
+  pdf.setFontSize(10.5);
+  pdf.setLineHeightFactor(1.35);
 
-  const paragraphs = text.replace(/\r\n?/g, '\n').split('\n');
+  const paragraphs = text.replace(/\r\n?/g, '\n').replace(/\f/g, '\n\f\n').split('\n');
   for (const paragraph of paragraphs) {
+    if (paragraph === '\f') {
+      if (y > margin) addPage();
+      continue;
+    }
     const lines = (pdf.splitTextToSize(paragraph || ' ', contentWidth) as string[]) || [' '];
     for (const line of lines) {
-      if (y + 18 > bottom) addPage();
+      if (y + 15 > bottom) addPage();
       pdf.text(line, margin, y);
-      y += 16;
+      y += 14;
     }
-    y += 5;
+    y += 3;
   }
 
   return pdf.output('blob');
@@ -116,7 +104,7 @@ export async function prepareStudyFile(file: File): Promise<PreparedStudyFile> {
     const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
     text = result.value.trim();
   } else if (extension === 'doc') {
-    text = extractLegacyDocText(await file.arrayBuffer());
+    text = await extractLegacyDocText(await file.arrayBuffer());
   } else if (extension === 'html' || extension === 'htm') {
     text = htmlToText(await file.text());
   } else if (extension === 'rtf') {
@@ -127,7 +115,7 @@ export async function prepareStudyFile(file: File): Promise<PreparedStudyFile> {
 
   if (!text) throw new Error('No readable text was found in this document.');
   return {
-    fileData: await textToPdf(text, file.name.replace(/\.[^.]+$/, '')),
+    fileData: await textToPdf(text),
     sourceFormat: extension === 'doc' || extension === 'docx' ? 'Word' : extension.toUpperCase(),
   };
 }

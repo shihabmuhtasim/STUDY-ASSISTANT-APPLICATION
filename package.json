@@ -19,6 +19,7 @@
     "dompurify": "^3.4.14",
     "drizzle-orm": "0.45.2",
     "idb-keyval": "^6.2.2",
+    "jsdoc": "github:Alpaq92/JSDoc#main",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.546.0",
     "mammoth": "^1.12.1",
