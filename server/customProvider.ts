@@ -115,9 +115,10 @@ async function nvidia(input: CustomProviderInput, promptContext: string) {
   let answer = '';
   let reasoning = '';
   const consume = (line: string) => {
-    if (!line.startsWith('data:')) return;
+    if (!line.startsWith('data:')) return false;
     const payload = line.slice(5).trim();
-    if (!payload || payload === '[DONE]') return;
+    if (payload === '[DONE]') return true;
+    if (!payload) return false;
     try {
       const data = JSON.parse(payload) as { choices?: Array<{ delta?: { content?: string; reasoning_content?: string }; message?: { content?: string; reasoning_content?: string } }> };
       const choice = data.choices?.[0];
@@ -126,16 +127,24 @@ async function nvidia(input: CustomProviderInput, promptContext: string) {
     } catch {
       // Ignore keep-alive or provider metadata events.
     }
+    return false;
   };
+  let completed = false;
   while (true) {
     const { value, done } = await reader.read();
     buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
     const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() || '';
-    lines.forEach(consume);
-    if (done) break;
+    for (const line of lines) {
+      if (consume(line)) {
+        completed = true;
+        break;
+      }
+    }
+    if (done || completed) break;
   }
-  consume(buffer);
+  if (!completed) consume(buffer);
+  else await reader.cancel().catch(() => undefined);
   const text = answer || reasoning;
   if (!text?.trim()) throw new Error('NVIDIA returned an empty response.');
   return text.trim();

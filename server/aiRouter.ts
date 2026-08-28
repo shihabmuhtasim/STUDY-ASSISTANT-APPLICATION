@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 
 export type AIHistoryItem = { prompt: string; response: string };
-export type AIModelPreference = 'auto' | 'gemini-flash' | 'gemini-flash-lite' | 'qwen' | 'llama';
+export type AIModelPreference = 'auto' | 'gemini-flash' | 'gemini-flash-lite' | 'qwen' | 'llama' | 'gemma' | 'glm' | 'nemotron';
 export type AIRequest = { prompt: string; pageNumber: number; pageText?: string; documentText?: string; pageImage?: string; history?: AIHistoryItem[]; modelPreference?: AIModelPreference; allowFallback?: boolean };
 type AIResult = { text: string; provider: 'cloudflare' | 'gemini' | 'local'; model: string; requestedModel?: AIModelPreference; fallbackUsed?: boolean };
 
@@ -9,10 +9,14 @@ const SYSTEM_PROMPT = `You are a careful, capable study assistant working from a
 const GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash-lite'];
 const TEXT_MODELS = [
   '@cf/qwen/qwen3-30b-a3b-fp8',
+  '@cf/zai-org/glm-4.7-flash',
+  '@cf/google/gemma-4-26b-a4b-it',
   '@cf/meta/llama-3.2-3b-instruct',
   '@cf/meta/llama-3.1-8b-instruct-fast',
+  '@cf/nvidia/nemotron-3-120b-a12b',
 ];
 const VISION_MODELS = [
+  '@cf/google/gemma-4-26b-a4b-it',
   '@cf/meta/llama-4-scout-17b-16e-instruct',
   '@cf/meta/llama-3.2-11b-vision-instruct',
 ];
@@ -22,7 +26,10 @@ const MODEL_TARGETS: Record<Exclude<AIModelPreference, 'auto'>, { provider: 'gem
   'gemini-flash': { provider: 'gemini', model: GEMINI_MODELS[0] },
   'gemini-flash-lite': { provider: 'gemini', model: GEMINI_MODELS[1] },
   qwen: { provider: 'cloudflare', model: TEXT_MODELS[0] },
-  llama: { provider: 'cloudflare', model: TEXT_MODELS[1] },
+  glm: { provider: 'cloudflare', model: TEXT_MODELS[1] },
+  gemma: { provider: 'cloudflare', model: TEXT_MODELS[2] },
+  llama: { provider: 'cloudflare', model: TEXT_MODELS[3] },
+  nemotron: { provider: 'cloudflare', model: TEXT_MODELS[5] },
 };
 
 export async function routeAIRequest(request: AIRequest): Promise<AIResult> {

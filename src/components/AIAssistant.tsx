@@ -29,7 +29,10 @@ const modelOptions: Array<{ value: AIModelPreference; label: string }> = [
   { value: 'gemini-flash', label: 'Gemini 3.6 Flash' },
   { value: 'gemini-flash-lite', label: 'Gemini 3.5 Flash-Lite' },
   { value: 'qwen', label: 'Qwen 3' },
+  { value: 'glm', label: 'GLM 4.7 Flash' },
+  { value: 'gemma', label: 'Gemma 4' },
   { value: 'llama', label: 'Llama 3.2' },
+  { value: 'nemotron', label: 'NVIDIA Nemotron 3' },
 ];
 const CONNECTIONS_SESSION_KEY = 'study-assistant-session-ai-connections';
 const SELECTED_CONNECTION_SESSION_KEY = 'study-assistant-session-selected-ai-connection';
@@ -54,6 +57,9 @@ function displayModel(model: string) {
   if (model === 'gemini-3.6-flash') return 'Gemini 3.6 Flash';
   if (model === 'gemini-3.5-flash-lite') return 'Gemini 3.5 Flash-Lite';
   if (model.includes('qwen')) return 'Qwen 3';
+  if (model.includes('glm-4.7')) return 'GLM 4.7 Flash';
+  if (model.includes('gemma-4')) return 'Gemma 4';
+  if (model.includes('nemotron-3')) return 'NVIDIA Nemotron 3';
   if (model.includes('llama')) return 'Llama';
   if (model === 'page-text-fallback') return 'Page text';
   return model;
