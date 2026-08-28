@@ -73,7 +73,7 @@ async function openAICompatible(input: CustomProviderInput, promptContext: strin
       ...(isNvidiaDeepSeek ? { top_p: 0.95, chat_template_kwargs: { thinking: false } } : {}),
       stream: false,
     }),
-  }, input.testMode ? 20_000 : 60_000);
+  }, 60_000);
   if (response.status === 202) throw new Error('The provider queued the request instead of answering. Try the test again shortly.');
   if (!response.ok) throw new Error(await errorMessage(response));
   const data = await response.json() as { choices?: Array<{ message?: { content?: string | Array<{ text?: string }>; reasoning?: string; reasoning_content?: string } }> };

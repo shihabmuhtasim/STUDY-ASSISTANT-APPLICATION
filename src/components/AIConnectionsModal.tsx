@@ -100,7 +100,7 @@ export function AIConnectionsModal({ isOpen, connections, selectedId, onSelect, 
       setTestState({ id: connection.id, status: 'error', message: 'Replace this with the NVIDIA key beginning with nvapi-, not the model ID.' });
       return;
     }
-    setTestState({ id: connection.id, status: 'testing', message: 'Contacting the provider…' });
+    setTestState({ id: connection.id, status: 'testing', message: connection.service === 'nvidia' ? 'Contacting NVIDIA… Large free models can take up to 60 seconds to start.' : 'Contacting the provider…' });
     try {
       await testCustomAIConnection(connection);
       setTestState({ id: connection.id, status: 'success', message: 'Connection works.' });
