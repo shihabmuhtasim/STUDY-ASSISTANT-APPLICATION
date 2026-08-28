@@ -102,9 +102,12 @@ async function nvidia(input: CustomProviderInput, promptContext: string) {
   }, 60_000);
   if (response.status === 202) throw new Error('NVIDIA queued this request. Try again shortly or select a faster NVIDIA model.');
   if (!response.ok) {
+    const providerError = await errorMessage(response);
     const message = response.status === 401
       ? 'NVIDIA rejected this API key. Edit the connection and paste the generated key beginning with nvapi-.'
-      : await errorMessage(response);
+      : /specified function in account|function id .+ is not found/i.test(providerError)
+        ? 'NVIDIA\'s hosted endpoint is currently unavailable for this account or model. This is an NVIDIA service issue, not a timeout. Try NVIDIA Nemotron 3 from the built-in model menu or another provider; automatic fallback will continue when enabled.'
+        : providerError;
     throw new Error(message);
   }
   if (!response.body) throw new Error('NVIDIA returned no response stream.');

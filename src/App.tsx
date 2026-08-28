@@ -9,7 +9,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Library } from './components/Library';
 import dynamic from 'next/dynamic';
 import { AccountIdentity, AccountSummary, StudyDocument } from './types';
-import { get, del } from 'idb-keyval';
+import { get, del, set as setStored } from 'idb-keyval';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { SiteNavigation } from './components/SiteNavigation';
 import { SiteInfoModal } from './components/SiteInfoModal';
@@ -27,6 +27,8 @@ const StudyInterface = dynamic(
 interface AppProps {
   initialAccount: AccountIdentity | null;
 }
+
+const localLibraryKey = (userId: string) => `study_documents_${userId}`;
 
 export default function App({ initialAccount }: AppProps) {
   const [documents, setDocuments] = useState<StudyDocument[]>([]);
@@ -56,20 +58,49 @@ export default function App({ initialAccount }: AppProps) {
     }
   }, [initialAccount]);
 
+  const persistLocalDocuments = useCallback(async (userId: string, nextDocuments: StudyDocument[]) => {
+    await setStored(localLibraryKey(userId), nextDocuments);
+    legacyDocuments.current = nextDocuments;
+  }, []);
+
   useEffect(() => {
+    const userId = account?.userId;
+    let cancelled = false;
+    setDocumentsLoaded(false);
+    if (!userId) {
+      legacyDocuments.current = [];
+      setDocuments([]);
+      setDocumentsLoaded(true);
+      return;
+    }
     async function loadDocs() {
       try {
-        const savedDocs = await get('study_documents');
-        if (Array.isArray(savedDocs)) legacyDocuments.current = savedDocs;
-      } catch (e) {
-        console.error("Failed to load documents from IndexedDB", e);
-        setStorageError('An older browser-saved library could not be read. New documents will still be stored in Google Drive.');
+        const [savedDocs, oldSavedDocs] = await Promise.all([
+          get(localLibraryKey(userId!)),
+          get('study_documents'),
+        ]);
+        const scoped = Array.isArray(savedDocs) ? savedDocs as StudyDocument[] : [];
+        const legacy = Array.isArray(oldSavedDocs) ? oldSavedDocs as StudyDocument[] : [];
+        const byId = new Map(scoped.map((document) => [document.id, document]));
+        legacy.forEach((document) => { if (!byId.has(document.id)) byId.set(document.id, document); });
+        const restored = [...byId.values()];
+        if (cancelled) return;
+        legacyDocuments.current = restored;
+        setDocuments(restored);
+        if (legacy.length) {
+          await setStored(localLibraryKey(userId!), restored);
+          await del('study_documents');
+        }
+      } catch (error) {
+        console.error('Failed to load documents from IndexedDB', error);
+        if (!cancelled) setStorageError('Your local document library could not be read. Cloud synchronization remains optional.');
       } finally {
-        setDocumentsLoaded(true);
+        if (!cancelled) setDocumentsLoaded(true);
       }
     }
     loadDocs();
-  }, []);
+    return () => { cancelled = true; };
+  }, [account?.userId]);
 
   useEffect(() => {
     if (!account || !documentsLoaded || cloudLoadedFor.current === account.userId) return;
@@ -84,6 +115,8 @@ export default function App({ initialAccount }: AppProps) {
           });
           Promise.all(merged.map((document) => saveCloudDocument(account.userId, document)))
             .catch((error) => console.error('Failed to migrate local library metadata', error));
+          persistLocalDocuments(account.userId, merged)
+            .catch((error) => console.error('Failed to persist merged local library', error));
           return merged;
         });
       })
@@ -91,7 +124,7 @@ export default function App({ initialAccount }: AppProps) {
         console.error('Failed to load cloud library', error);
         setStorageError('Your cloud library could not be loaded. Local documents are still available.');
       });
-  }, [account, documentsLoaded]);
+  }, [account, documentsLoaded, persistLocalDocuments]);
 
   useEffect(() => {
     refreshAccount();
@@ -149,13 +182,12 @@ export default function App({ initialAccount }: AppProps) {
 
       const synchronized = [...synchronizedById.values()].sort((a, b) => b.updatedAt - a.updatedAt);
       setDocuments(synchronized);
-      await del('study_documents');
-      legacyDocuments.current = [];
+      await persistLocalDocuments(account.userId, synchronized);
       if (announce) setCloudMessage(`Google Drive synchronized. ${synchronized.length} document${synchronized.length === 1 ? '' : 's'} available.`);
     } finally {
       setDriveBusy(false);
     }
-  }, [account, documents]);
+  }, [account, documents, persistLocalDocuments]);
 
   useEffect(() => {
     const userId = account?.userId;
@@ -177,7 +209,6 @@ export default function App({ initialAccount }: AppProps) {
         }
         clearDriveSession();
         setDriveToken(null);
-        if (status.connected) setCloudMessage('Google Drive is linked to your account. Reconnect once in this browser to load your document files.');
       })
       .catch((error) => console.error('Failed to restore Google Drive connection', error));
     return () => { cancelled = true; };
@@ -197,13 +228,39 @@ export default function App({ initialAccount }: AppProps) {
   }, [account, documentsLoaded, driveToken, synchronizeDrive]);
 
   const handleAddDocument = async (doc: StudyDocument) => {
-    if (!account || !driveToken) throw new Error('Connect Google Drive before adding a document.');
-    let nextDocument: StudyDocument = { ...doc, mimeType: doc.fileData instanceof Blob ? doc.fileData.type : 'application/pdf', fileSize: doc.fileData instanceof Blob ? doc.fileData.size : undefined, cloudStatus: 'syncing' };
-    const driveFile = await uploadDocumentToDrive(nextDocument, driveToken);
-    nextDocument = { ...nextDocument, driveFileId: driveFile.id, mimeType: driveFile.mimeType, fileSize: Number(driveFile.size) || nextDocument.fileSize, cloudStatus: 'synced' };
-    await saveCloudDocument(account.userId, nextDocument);
-    const newDocs = [...documents, nextDocument];
+    if (!account) throw new Error('Sign in before adding a document.');
+    let nextDocument: StudyDocument = {
+      ...doc,
+      mimeType: doc.fileData instanceof Blob ? doc.fileData.type : 'application/pdf',
+      fileSize: doc.fileData instanceof Blob ? doc.fileData.size : undefined,
+      cloudStatus: driveToken ? 'syncing' : 'local',
+    };
+    let newDocs = [...documents, nextDocument];
     setDocuments(newDocs);
+    await persistLocalDocuments(account.userId, newDocs);
+    try {
+      await saveCloudDocument(account.userId, nextDocument);
+    } catch (error) {
+      console.error('Failed to save document metadata', error);
+      setCloudMessage('The document is available on this device. Account metadata will synchronize when the cloud service is available.');
+    }
+
+    if (driveToken) {
+      try {
+        const driveFile = await uploadDocumentToDrive(nextDocument, driveToken);
+        nextDocument = { ...nextDocument, driveFileId: driveFile.id, mimeType: driveFile.mimeType, fileSize: Number(driveFile.size) || nextDocument.fileSize, cloudStatus: 'synced' };
+        newDocs = newDocs.map((item) => item.id === nextDocument.id ? nextDocument : item);
+        setDocuments(newDocs);
+        await persistLocalDocuments(account.userId, newDocs);
+        await saveCloudDocument(account.userId, nextDocument);
+      } catch (error) {
+        nextDocument = { ...nextDocument, cloudStatus: 'error' };
+        newDocs = newDocs.map((item) => item.id === nextDocument.id ? nextDocument : item);
+        setDocuments(newDocs);
+        await persistLocalDocuments(account.userId, newDocs);
+        setCloudMessage('The document is available locally. Google Drive backup will retry when you resume sync.');
+      }
+    }
     return nextDocument;
   };
 
@@ -212,6 +269,7 @@ export default function App({ initialAccount }: AppProps) {
     const newDocs = documents.filter(d => d.id !== id);
     setDocuments(newDocs);
     try {
+      if (account) await persistLocalDocuments(account.userId, newDocs);
       await del(`notes_${id}`);
       await del(`annotations_${id}`);
       if (account) await deleteCloudDocument(account.userId, id);
@@ -227,7 +285,10 @@ export default function App({ initialAccount }: AppProps) {
     setDocuments(newDocs);
     setCurrentDocument((current) => current?.id === updated.id ? updated : current);
     try {
-      if (account) await saveCloudDocument(account.userId, updated);
+      if (account) {
+        await persistLocalDocuments(account.userId, newDocs);
+        await saveCloudDocument(account.userId, updated);
+      }
     } catch (error) {
       console.error('Failed to update document', error);
       setStorageError('The document update could not be saved on this device.');
@@ -274,10 +335,12 @@ export default function App({ initialAccount }: AppProps) {
     clearDriveSession();
     setDriveToken(null);
     setDriveLinked(false);
-    setDocuments([]);
     driveSyncedFor.current = null;
     await saveDriveConnection(account.userId, false);
-    setCloudMessage('Google Drive disconnected. Your files remain in Google Drive.');
+    const localDocuments = documents.map((document) => ({ ...document, cloudStatus: 'local' as const }));
+    setDocuments(localDocuments);
+    await persistLocalDocuments(account.userId, localDocuments);
+    setCloudMessage('Google Drive disconnected. Local documents remain available, and existing Drive files were not deleted.');
   };
 
   return (

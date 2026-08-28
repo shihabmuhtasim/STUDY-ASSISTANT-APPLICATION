@@ -15,25 +15,32 @@ function authHeaders(accessToken: string) {
 }
 
 export function saveDriveSession(userId: string, accessToken: string) {
-  const session: DriveSession = { userId, accessToken, expiresAt: Date.now() + 50 * 60 * 1_000 };
-  window.sessionStorage.setItem(DRIVE_SESSION_KEY, JSON.stringify(session));
+  const session: DriveSession = { userId, accessToken, expiresAt: Date.now() + 55 * 60 * 1_000 };
+  window.localStorage.setItem(DRIVE_SESSION_KEY, JSON.stringify(session));
+  window.sessionStorage.removeItem(DRIVE_SESSION_KEY);
 }
 
 export function loadDriveSession(userId: string) {
   try {
-    const session = JSON.parse(window.sessionStorage.getItem(DRIVE_SESSION_KEY) || 'null') as DriveSession | null;
+    const stored = window.localStorage.getItem(DRIVE_SESSION_KEY) || window.sessionStorage.getItem(DRIVE_SESSION_KEY);
+    const session = JSON.parse(stored || 'null') as DriveSession | null;
     if (!session || session.userId !== userId || session.expiresAt <= Date.now()) {
+      window.localStorage.removeItem(DRIVE_SESSION_KEY);
       window.sessionStorage.removeItem(DRIVE_SESSION_KEY);
       return null;
     }
+    window.localStorage.setItem(DRIVE_SESSION_KEY, JSON.stringify(session));
+    window.sessionStorage.removeItem(DRIVE_SESSION_KEY);
     return session.accessToken;
   } catch {
+    window.localStorage.removeItem(DRIVE_SESSION_KEY);
     window.sessionStorage.removeItem(DRIVE_SESSION_KEY);
     return null;
   }
 }
 
 export function clearDriveSession() {
+  window.localStorage.removeItem(DRIVE_SESSION_KEY);
   window.sessionStorage.removeItem(DRIVE_SESSION_KEY);
 }
 
