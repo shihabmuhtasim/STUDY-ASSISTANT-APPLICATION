@@ -83,31 +83,60 @@ async function openAICompatible(input: CustomProviderInput, promptContext: strin
 }
 
 async function nvidia(input: CustomProviderInput, promptContext: string) {
-  // Keep this request aligned with the dedicated NVIDIA relay that was proven
-  // to work before connections moved to encrypted account storage.
   const response = await providerFetch(NVIDIA_CHAT_ENDPOINT, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
+      accept: 'text/event-stream',
       authorization: `Bearer ${input.connection.apiKey.trim()}`,
     },
     body: JSON.stringify({
       model: input.connection.model.trim(),
       messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: promptContext }],
-      max_tokens: 3_000,
-      temperature: 0.2,
+      max_tokens: input.testMode ? 96 : 3_000,
+      temperature: 1,
+      top_p: 0.95,
+      chat_template_kwargs: { thinking: false },
+      stream: true,
     }),
   }, 60_000);
+  if (response.status === 202) throw new Error('NVIDIA queued this request. Try again shortly or select a faster NVIDIA model.');
   if (!response.ok) {
     const message = response.status === 401
       ? 'NVIDIA rejected this API key. Edit the connection and paste the generated key beginning with nvapi-.'
       : await errorMessage(response);
     throw new Error(message);
   }
-  const data = await response.json() as { choices?: Array<{ message?: { content?: string | Array<{ text?: string }>; reasoning?: string; reasoning_content?: string } }> };
-  const content = data.choices?.[0]?.message?.content;
-  const reasoning = data.choices?.[0]?.message?.reasoning || data.choices?.[0]?.message?.reasoning_content;
-  const text = (typeof content === 'string' ? content : content?.map((part) => part.text || '').join('')) || reasoning;
+  if (!response.body) throw new Error('NVIDIA returned no response stream.');
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let answer = '';
+  let reasoning = '';
+  const consume = (line: string) => {
+    if (!line.startsWith('data:')) return;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === '[DONE]') return;
+    try {
+      const data = JSON.parse(payload) as { choices?: Array<{ delta?: { content?: string; reasoning_content?: string }; message?: { content?: string; reasoning_content?: string } }> };
+      const choice = data.choices?.[0];
+      answer += choice?.delta?.content || choice?.message?.content || '';
+      reasoning += choice?.delta?.reasoning_content || choice?.message?.reasoning_content || '';
+    } catch {
+      // Ignore keep-alive or provider metadata events.
+    }
+  };
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || '';
+    lines.forEach(consume);
+    if (done) break;
+  }
+  consume(buffer);
+  const text = answer || reasoning;
   if (!text?.trim()) throw new Error('NVIDIA returned an empty response.');
   return text.trim();
 }

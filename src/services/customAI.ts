@@ -53,7 +53,7 @@ export async function askCustomAI(input: CustomAIInput) {
       history: input.history,
       testMode: input.testMode === true,
     }),
-  }, input.testMode ? 70_000 : 75_000);
+  }, input.connection.service === 'nvidia' ? 120_000 : input.testMode ? 70_000 : 75_000);
   if (!data.response?.trim()) throw new AIRequestError('The provider returned an empty response.', 'CUSTOM_EMPTY');
   return { response: data.response, provider: 'custom' as const, model: data.model || input.connection.model };
 }
