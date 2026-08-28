@@ -7,5 +7,6 @@ declare namespace Cloudflare {
     GEMINI_API_KEY?: string;
     GEMINI_MODEL?: string;
     GEMINI_MODELS?: string;
+    USER_DATA_ENCRYPTION_KEY?: string;
   }
 }

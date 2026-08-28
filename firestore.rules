@@ -14,16 +14,34 @@ service cloud.firestore {
           'email', 'displayName', 'photoURL', 'plan', 'questionsUsed',
           'questionLimit', 'createdAt', 'lastLoginAt'
         ])
-        && request.resource.data.plan == 'free'
+        && request.resource.data.plan == 'pro'
         && request.resource.data.questionsUsed == 0
-        && request.resource.data.questionLimit == 100;
+        && request.resource.data.questionLimit == 1000000;
 
       allow update: if ownsProfile(userId)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'email', 'displayName', 'photoURL', 'lastLoginAt'
-        ]);
+          'email', 'displayName', 'photoURL', 'plan', 'questionLimit', 'lastLoginAt'
+        ])
+        && request.resource.data.plan == 'pro'
+        && request.resource.data.questionLimit == 1000000;
 
       allow delete: if false;
+    }
+
+    match /users/{userId}/documents/{documentId} {
+      allow read, create, update, delete: if ownsProfile(userId);
+
+      match /pages/{pageId} {
+        allow read, create, update, delete: if ownsProfile(userId);
+      }
+    }
+
+    match /users/{userId}/settings/{settingId} {
+      allow read, create, update, delete: if ownsProfile(userId);
+    }
+
+    match /users/{userId}/aiConnections/{connectionId} {
+      allow read, create, update, delete: if ownsProfile(userId);
     }
 
     match /{document=**} {

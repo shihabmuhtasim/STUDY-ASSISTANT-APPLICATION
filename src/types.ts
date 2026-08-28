@@ -4,6 +4,10 @@ export interface StudyDocument {
   fileData: string | Blob; // Legacy data URL or locally stored PDF Blob
   sourceFormat?: string;
   originalFileName?: string;
+  driveFileId?: string;
+  mimeType?: string;
+  fileSize?: number;
+  cloudStatus?: 'local' | 'syncing' | 'synced' | 'error';
   totalPages: number;
   createdAt: number;
   updatedAt: number;
@@ -72,6 +76,8 @@ export interface CustomAIConnection {
   service: CustomAIService;
   provider: CustomAIProvider;
   apiKey: string;
+  keyHint?: string;
+  isStored?: boolean;
   model: string;
   baseUrl?: string;
 }

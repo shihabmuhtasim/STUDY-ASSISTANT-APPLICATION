@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PDFViewer } from './PDFViewer';
 import { NotesPanel } from './NotesPanel';
 import { AIAssistant } from './AIAssistant';
@@ -9,6 +9,7 @@ import { get, set } from 'idb-keyval';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { exportStudyPackPDF } from '../utils/pdfExport';
 import { toRichTextHtml } from './RichTextEditor';
+import { loadCloudWorkspace, saveCloudPage } from '../services/cloudData';
 
 interface StudyInterfaceProps {
   document: StudyDocument;
@@ -30,6 +31,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   const [areAnnotationsLoaded, setAreAnnotationsLoaded] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<string | null>(null);
+  const cloudSaveTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
 
   // Universal Layout Mode: 'split' (all 3 panes visible) | 'tabs' (1 pane visible with tab navigation) | 'pdf-only'
   const [layoutMode, setLayoutMode] = useState<'split' | 'tabs' | 'pdf-only'>('split');
@@ -69,6 +71,16 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     loadNotes();
   }, [document.id]);
 
+  useEffect(() => {
+    if (!account || !isNotesLoaded || !areAnnotationsLoaded) return;
+    loadCloudWorkspace(account.userId, document.id)
+      .then((cloud) => {
+        setNotes((current) => ({ ...current, ...cloud.notes }));
+        setAnnotations((current) => ({ ...current, ...cloud.annotations }));
+      })
+      .catch((error) => console.error('Failed to load cloud study data', error));
+  }, [account, document.id, isNotesLoaded, areAnnotationsLoaded]);
+
   // Save notes to IndexedDB whenever they change
   useEffect(() => {
     if (isNotesLoaded) {
@@ -97,15 +109,27 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     aiHistory: [],
   };
 
+  const queueCloudSave = (page: number, note: PageNote, strokes: AnnotationStroke[]) => {
+    if (!account) return;
+    if (cloudSaveTimers.current[page]) clearTimeout(cloudSaveTimers.current[page]);
+    cloudSaveTimers.current[page] = setTimeout(() => {
+      saveCloudPage(account.userId, document.id, page, note, strokes)
+        .catch((error) => console.error('Failed to synchronize page study data', error));
+      delete cloudSaveTimers.current[page];
+    }, 700);
+  };
+
   const handleNoteChange = (content: string, blocks?: NoteBlock[]) => {
+    const nextNote = {
+      ...currentNote,
+      content,
+      blocks: blocks || currentNote.blocks || [],
+    };
     setNotes(prev => ({
       ...prev,
-      [pageNumber]: {
-        ...currentNote,
-        content,
-        blocks: blocks || currentNote.blocks || [],
-      }
+      [pageNumber]: nextNote,
     }));
+    queueCloudSave(pageNumber, nextNote, annotations[pageNumber] || []);
   };
 
   const handleClearNote = () => {
@@ -115,13 +139,15 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   };
 
   const handleAddInteraction = (interaction: AIInteraction) => {
+    const nextNote = {
+      ...currentNote,
+      aiHistory: [...(currentNote.aiHistory || []), interaction],
+    };
     setNotes(prev => ({
       ...prev,
-      [pageNumber]: {
-        ...currentNote,
-        aiHistory: [...(currentNote.aiHistory || []), interaction]
-      }
+      [pageNumber]: nextNote,
     }));
+    queueCloudSave(pageNumber, nextNote, annotations[pageNumber] || []);
   };
 
   const handleInsertToNotes = (editedText: string, questionHeader?: string) => {
@@ -178,7 +204,10 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     onDocumentContextLoadingChange: setIsDocumentContextLoading,
     onDocumentLoaded: handleDocumentLoaded,
     annotations: annotations[pageNumber] || [],
-    onAnnotationsChange: (strokes: AnnotationStroke[]) => setAnnotations((current) => ({ ...current, [pageNumber]: strokes })),
+    onAnnotationsChange: (strokes: AnnotationStroke[]) => {
+      setAnnotations((current) => ({ ...current, [pageNumber]: strokes }));
+      queueCloudSave(pageNumber, currentNote, strokes);
+    },
   };
 
   const aiAssistantProps = {

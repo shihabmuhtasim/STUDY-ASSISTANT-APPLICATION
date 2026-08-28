@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { ChevronRight, Clock, FileText, Loader2, NotebookPen, Pencil, Search, ShieldCheck, Sparkles, Trash2, Upload, X } from 'lucide-react';
+import { CheckCircle2, ChevronRight, Clock, Cloud, CloudOff, FileText, Loader2, NotebookPen, Pencil, Search, ShieldCheck, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { AccountIdentity, AccountSummary, StudyDocument } from '../types';
 import { DOCUMENT_ACCEPT, prepareStudyFile } from '../utils/documentImport';
@@ -12,9 +12,13 @@ interface LibraryProps {
   onUpdateDocument: (doc: StudyDocument) => void;
   account: AccountSummary | AccountIdentity | null;
   onRequireAuth: () => void;
+  driveConnected: boolean;
+  driveBusy: boolean;
+  cloudMessage: string | null;
+  onConnectDrive: () => void;
 }
 
-export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocument, onUpdateDocument, account, onRequireAuth }: LibraryProps) {
+export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocument, onUpdateDocument, account, onRequireAuth, driveConnected, driveBusy, cloudMessage, onConnectDrive }: LibraryProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [query, setQuery] = useState('');
@@ -79,12 +83,27 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
           <div className="mt-7 grid max-w-3xl grid-cols-1 gap-3 border-t border-slate-200 pt-5 sm:grid-cols-3">
             <div className="flex items-center gap-2.5 text-sm text-slate-600"><FileText size={18} className="text-indigo-600" />PDF and Word support</div>
             <div className="flex items-center gap-2.5 text-sm text-slate-600"><NotebookPen size={18} className="text-emerald-600" />Page-linked notes</div>
-            <div className="flex items-center gap-2.5 text-sm text-slate-600"><ShieldCheck size={18} className="text-amber-600" />Local document storage</div>
+            <div className="flex items-center gap-2.5 text-sm text-slate-600"><ShieldCheck size={18} className="text-amber-600" />Private cloud workspace</div>
           </div>
         </div>
       </section>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+
+        {account && (
+          <div className="mb-5 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <span className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg ${driveConnected ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{driveConnected ? <Cloud size={18} /> : <CloudOff size={18} />}</span>
+              <div><p className="text-sm font-semibold text-slate-900">Google Drive document sync</p><p className="mt-0.5 text-xs text-slate-500">Notes and study history sync through your account. Connect Drive to make the document files available on every device.</p></div>
+            </div>
+            <button type="button" onClick={onConnectDrive} disabled={driveBusy} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-60">
+              {driveBusy ? <Loader2 size={16} className="animate-spin" /> : driveConnected ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Cloud size={16} />}
+              {driveBusy ? 'Synchronizing…' : driveConnected ? 'Sync now' : 'Connect Google Drive'}
+            </button>
+          </div>
+        )}
+
+        {cloudMessage && <p role="status" className="mb-5 rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">{cloudMessage}</p>}
 
         {error && (
           <div role="alert" className="mb-5 flex items-center justify-between gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
@@ -149,6 +168,7 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
                         <button type="button" onClick={() => onOpenDocument(document)} className="block w-full text-left">
                           <h3 className="font-medium text-slate-900 truncate" title={document.title}>{document.title}</h3>
                           <p className="mt-1 text-xs text-slate-500">{document.sourceFormat ? `${document.sourceFormat} · ` : ''}{document.totalPages > 0 ? `${document.totalPages} pages · ` : ''}Updated {new Date(document.updatedAt).toLocaleDateString()}</p>
+                          {document.cloudStatus && <p className={`mt-1 flex items-center gap-1 text-[11px] ${document.cloudStatus === 'synced' ? 'text-emerald-700' : document.cloudStatus === 'error' ? 'text-red-700' : 'text-slate-500'}`}>{document.cloudStatus === 'synced' ? <CheckCircle2 size={12} /> : <Cloud size={12} />}{document.cloudStatus === 'synced' ? 'Available across devices' : document.cloudStatus === 'syncing' ? 'Synchronizing…' : document.cloudStatus === 'error' ? 'Drive sync needs attention' : 'Stored on this device'}</p>}
                         </button>
                       )}
                     </div>

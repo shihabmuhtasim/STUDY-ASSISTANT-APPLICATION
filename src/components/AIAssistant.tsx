@@ -7,6 +7,8 @@ import { v4 as uuidv4 } from 'uuid';
 import Markdown from 'react-markdown';
 import { EditInsertModal } from './EditInsertModal';
 import { AIConnectionsModal } from './AIConnectionsModal';
+import { loadCloudPreferences, saveCloudPreferences } from '../services/cloudData';
+import { deleteEncryptedConnection, loadSavedConnections, saveEncryptedConnection } from '../services/connectionStore';
 
 interface AIAssistantProps {
   pageNumber: number;
@@ -64,6 +66,7 @@ export function AIAssistant({
   documentContext,
   isDocumentContextLoading,
   history,
+  account,
   onAddInteraction,
   onInsertToNotes,
 }: AIAssistantProps) {
@@ -97,17 +100,41 @@ export function AIAssistant({
     if (savedModel === 'custom' && selectedId) setModelPreference('custom');
     else if (savedModel && modelOptions.some((option) => option.value === savedModel)) setModelPreference(savedModel);
     setAllowFallback(window.localStorage.getItem('study-assistant-fallback') !== 'false');
-    setPreferencesLoaded(true);
-  }, []);
+    if (account) {
+      Promise.all([
+        (async () => {
+          for (const connection of sessionConnections) await saveEncryptedConnection(connection);
+          const saved = await loadSavedConnections();
+          setConnections(saved);
+          window.sessionStorage.removeItem(CONNECTIONS_SESSION_KEY);
+          return saved;
+        })(),
+        loadCloudPreferences(account.userId),
+      ])
+        .then(([saved, cloud]) => {
+          if (!cloud) {
+            setSelectedConnectionId(saved[0]?.id || null);
+            return;
+          }
+          if (modelOptions.some((option) => option.value === cloud.modelPreference) || cloud.modelPreference === 'custom') setModelPreference(cloud.modelPreference);
+          setAllowFallback(cloud.allowFallback !== false);
+          setSelectedConnectionId(saved.some((connection) => connection.id === cloud.selectedConnectionId) ? cloud.selectedConnectionId : saved[0]?.id || null);
+        })
+        .catch((loadError) => console.error('Failed to load cloud AI settings', loadError))
+        .finally(() => setPreferencesLoaded(true));
+    } else {
+      setPreferencesLoaded(true);
+    }
+  }, [account?.userId]);
 
   useEffect(() => {
     if (!preferencesLoaded) return;
     window.localStorage.setItem('study-assistant-model', modelPreference);
     window.localStorage.setItem('study-assistant-fallback', String(allowFallback));
-    window.sessionStorage.setItem(CONNECTIONS_SESSION_KEY, JSON.stringify(connections));
     if (selectedConnectionId) window.sessionStorage.setItem(SELECTED_CONNECTION_SESSION_KEY, selectedConnectionId);
     else window.sessionStorage.removeItem(SELECTED_CONNECTION_SESSION_KEY);
-  }, [modelPreference, allowFallback, connections, selectedConnectionId, preferencesLoaded]);
+    if (account) saveCloudPreferences(account.userId, { modelPreference, allowFallback, selectedConnectionId }).catch((saveError) => console.error('Failed to save cloud AI preferences', saveError));
+  }, [modelPreference, allowFallback, selectedConnectionId, preferencesLoaded, account?.userId]);
 
   useEffect(() => {
     setIncludeImage(!pageText.trim());
@@ -183,13 +210,15 @@ export function AIAssistant({
 
   const activeConnection = connections.find((connection) => connection.id === selectedConnectionId) || null;
 
-  const saveConnection = (connection: CustomAIConnection) => {
-    setConnections((current) => current.some((item) => item.id === connection.id)
-      ? current.map((item) => item.id === connection.id ? connection : item)
-      : [...current, connection]);
+  const saveConnection = async (connection: CustomAIConnection) => {
+    const saved = await saveEncryptedConnection(connection);
+    setConnections((current) => current.some((item) => item.id === saved.id)
+      ? current.map((item) => item.id === saved.id ? saved : item)
+      : [...current, saved]);
   };
 
-  const deleteConnection = (id: string) => {
+  const deleteConnection = async (id: string) => {
+    await deleteEncryptedConnection(id);
     setConnections((current) => {
       const next = current.filter((item) => item.id !== id);
       if (selectedConnectionId === id) {

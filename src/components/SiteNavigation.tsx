@@ -51,8 +51,8 @@ export function SiteNavigation({ account, onLibrary, onPlans, onContact, onAuth,
                     </div>
                   </div>
                   <div className="mt-2 flex items-center justify-between px-2 py-1 text-xs text-slate-500">
-                    <span>Current plan</span>
-                    <span className="rounded-full bg-emerald-50 px-2 py-1 font-semibold capitalize text-emerald-700">{'plan' in account ? account.plan : 'Free'}</span>
+                    <span>Access</span>
+                    <span className="rounded-full bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">Full access</span>
                   </div>
                   <button type="button" onClick={() => { setAccountOpen(false); onSignOut(); }} className="mt-2 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium text-red-700 hover:bg-red-50"><LogOut size={16} />Sign out</button>
                 </div>
