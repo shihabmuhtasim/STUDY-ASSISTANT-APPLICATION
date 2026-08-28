@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { CustomAIConnection } from '../../../../src/types';
 import { verifyFirebaseRequest } from '../../../../server/firebaseUser';
 import { listConnections, removeConnection, saveConnection } from '../../../../server/userConnections';
+import { getAccountSummary } from '../../../../server/accounts';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +23,8 @@ function validConnection(value: unknown): value is CustomAIConnection {
 export async function GET(request: Request) {
   const user = await verifyFirebaseRequest(request);
   if (!user) return NextResponse.json({ error: 'Sign in again to load AI connections.' }, { status: 401 });
+  const account = await getAccountSummary(user);
+  if (account.plan !== 'pro' && account.role !== 'admin') return NextResponse.json({ error: 'Custom AI connections are available with Pro.', code: 'PLAN_REQUIRED' }, { status: 403 });
   try {
     return NextResponse.json({ connections: await listConnections(user) }, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
@@ -33,6 +36,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await verifyFirebaseRequest(request);
   if (!user) return NextResponse.json({ error: 'Sign in again to save this connection.' }, { status: 401 });
+  const account = await getAccountSummary(user);
+  if (account.plan !== 'pro' && account.role !== 'admin') return NextResponse.json({ error: 'Custom AI connections are available with Pro.', code: 'PLAN_REQUIRED' }, { status: 403 });
   const body = await request.json().catch(() => null) as { connection?: unknown } | null;
   if (!validConnection(body?.connection)) return NextResponse.json({ error: 'Enter a valid AI connection.' }, { status: 400 });
   try {
@@ -46,6 +51,8 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   const user = await verifyFirebaseRequest(request);
   if (!user) return NextResponse.json({ error: 'Sign in again to delete this connection.' }, { status: 401 });
+  const account = await getAccountSummary(user);
+  if (account.plan !== 'pro' && account.role !== 'admin') return NextResponse.json({ error: 'Custom AI connections are available with Pro.', code: 'PLAN_REQUIRED' }, { status: 403 });
   const body = await request.json().catch(() => null) as { id?: string } | null;
   if (!body?.id || !/^[a-zA-Z0-9_-]{6,80}$/.test(body.id)) return NextResponse.json({ error: 'Invalid connection.' }, { status: 400 });
   await removeConnection(user, body.id);

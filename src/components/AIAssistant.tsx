@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Bot, Check, Copy, Image as ImageIcon, KeyRound, Loader2, Plus, Send, Sparkles } from 'lucide-react';
+import { Bot, Check, Copy, Image as ImageIcon, KeyRound, Loader2, Lock, Plus, Send, Sparkles } from 'lucide-react';
 import { AccountIdentity, AccountSummary, AIInteraction, AIModelPreference, CustomAIConnection } from '../types';
 import { AIRequestError, askAIAboutPage } from '../services/ai';
 import { askCustomAI } from '../services/customAI';
@@ -19,6 +19,7 @@ interface AIAssistantProps {
   history: AIInteraction[];
   account: AccountSummary | AccountIdentity | null;
   onRemainingChange: (remaining: number) => void;
+  onUpgrade: () => void;
   onAddInteraction: (interaction: AIInteraction) => void;
   onInsertToNotes: (text: string, questionHeader?: string) => void;
 }
@@ -73,6 +74,8 @@ export function AIAssistant({
   isDocumentContextLoading,
   history,
   account,
+  onRemainingChange,
+  onUpgrade,
   onAddInteraction,
   onInsertToNotes,
 }: AIAssistantProps) {
@@ -89,6 +92,8 @@ export function AIAssistant({
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [insertModalState, setInsertModalState] = useState({ isOpen: false, promptQuestion: '', aiResponse: '' });
+  const hasProAccess = Boolean(account && 'plan' in account && account.plan === 'pro');
+  const remaining = account && 'aiRemaining' in account ? account.aiRemaining : 0;
 
   useEffect(() => {
     const savedModel = window.localStorage.getItem('study-assistant-model') as AIModelPreference | null;
@@ -106,7 +111,7 @@ export function AIAssistant({
     if (savedModel === 'custom' && selectedId) setModelPreference('custom');
     else if (savedModel && modelOptions.some((option) => option.value === savedModel)) setModelPreference(savedModel);
     setAllowFallback(window.localStorage.getItem('study-assistant-fallback') !== 'false');
-    if (account) {
+    if (account && hasProAccess) {
       Promise.all([
         (async () => {
           for (const connection of sessionConnections) await saveEncryptedConnection(connection);
@@ -129,9 +134,14 @@ export function AIAssistant({
         .catch((loadError) => console.error('Failed to load cloud AI settings', loadError))
         .finally(() => setPreferencesLoaded(true));
     } else {
+      setConnections([]);
+      setSelectedConnectionId(null);
+      setConnectionsOpen(false);
+      setModelPreference('glm');
+      setAllowFallback(false);
       setPreferencesLoaded(true);
     }
-  }, [account?.userId]);
+  }, [account?.userId, hasProAccess]);
 
   useEffect(() => {
     if (!preferencesLoaded) return;
@@ -139,13 +149,13 @@ export function AIAssistant({
     window.localStorage.setItem('study-assistant-fallback', String(allowFallback));
     if (selectedConnectionId) window.sessionStorage.setItem(SELECTED_CONNECTION_SESSION_KEY, selectedConnectionId);
     else window.sessionStorage.removeItem(SELECTED_CONNECTION_SESSION_KEY);
-    if (account) saveCloudPreferences(account.userId, { modelPreference, allowFallback, selectedConnectionId }).catch((saveError) => console.error('Failed to save cloud AI preferences', saveError));
-  }, [modelPreference, allowFallback, selectedConnectionId, preferencesLoaded, account?.userId]);
+    if (account) saveCloudPreferences(account.userId, { modelPreference: hasProAccess ? modelPreference : 'glm', allowFallback: hasProAccess ? allowFallback : false, selectedConnectionId: hasProAccess ? selectedConnectionId : null }).catch((saveError) => console.error('Failed to save cloud AI preferences', saveError));
+  }, [modelPreference, allowFallback, selectedConnectionId, preferencesLoaded, account?.userId, hasProAccess]);
 
   useEffect(() => {
-    setIncludeImage(!pageText.trim());
+    setIncludeImage(hasProAccess && !pageText.trim());
     setError(null);
-  }, [pageNumber, pageText]);
+  }, [pageNumber, pageText, hasProAccess]);
 
   const handleAsk = async (text: string) => {
     if (!text.trim() || isLoading || isDocumentContextLoading) return;
@@ -184,6 +194,7 @@ export function AIAssistant({
       } else {
         result = await askAIAboutPage({ ...request, modelPreference, allowFallback });
       }
+      if (typeof result.remaining === 'number') onRemainingChange(result.remaining);
       onAddInteraction({
         id: uuidv4(),
         prompt: text.trim(),
@@ -300,22 +311,25 @@ export function AIAssistant({
                 setModelPreference('custom');
               } else setModelPreference(value as AIModelPreference);
             }} className="max-w-48 bg-white border border-slate-200 rounded-md px-2 py-1.5 text-xs text-slate-700 focus:border-indigo-500">
-              {modelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              {connections.map((connection) => <option key={connection.id} value={`custom:${connection.id}`}>{connection.name}</option>)}
+              {modelOptions.map((option) => {
+                const isBasic = option.value === 'glm';
+                return <option key={option.value} value={option.value} disabled={!hasProAccess && !isBasic}>{isBasic && !hasProAccess ? 'Study Basic' : `${option.label}${hasProAccess ? '' : ' · Pro'}`}</option>;
+              })}
+              {hasProAccess && connections.map((connection) => <option key={connection.id} value={`custom:${connection.id}`}>{connection.name}</option>)}
             </select>
-            <button type="button" onClick={() => setConnectionsOpen(true)} className="p-1.5 rounded-md border border-slate-200 text-slate-500 hover:text-indigo-700 hover:border-indigo-300" title="Manage API keys" aria-label="Manage API keys"><KeyRound size={14} /></button>
+            <button type="button" onClick={() => hasProAccess ? setConnectionsOpen(true) : onUpgrade()} className="p-1.5 rounded-md border border-slate-200 text-slate-500 hover:text-indigo-700 hover:border-indigo-300" title={hasProAccess ? 'Manage API keys' : 'Custom models require Pro'} aria-label={hasProAccess ? 'Manage API keys' : 'Upgrade for custom models'}>{hasProAccess ? <KeyRound size={14} /> : <Lock size={14} />}</button>
           </label>
-          <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+          {hasProAccess ? <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
             <input type="checkbox" checked={allowFallback} onChange={(event) => setAllowFallback(event.target.checked)} className="accent-indigo-600" />
             Auto fallback
-          </label>
+          </label> : <button type="button" onClick={onUpgrade} className="inline-flex items-center gap-1.5 rounded-md bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"><Lock size={12} />{remaining} answers left · Upgrade</button>}
         </div>
         <div className="flex items-center justify-between gap-2 mb-2">
           <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-            <input type="checkbox" checked={includeImage} onChange={(event) => setIncludeImage(event.target.checked)} disabled={!pageImage} className="accent-indigo-600" />
+            <input type="checkbox" checked={includeImage} onChange={(event) => setIncludeImage(event.target.checked)} disabled={!hasProAccess || !pageImage} className="accent-indigo-600" />
             <ImageIcon size={14} />Include page image
           </label>
-          <span className="text-[11px] text-slate-400">Useful for diagrams</span>
+          <span className="text-[11px] text-slate-400">{hasProAccess ? 'Useful for diagrams' : 'Pro visual analysis'}</span>
         </div>
         <form onSubmit={(event) => { event.preventDefault(); handleAsk(prompt); }} className="relative flex items-center">
           <input

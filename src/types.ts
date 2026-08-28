@@ -90,6 +90,7 @@ export interface AccountIdentity {
 
 export interface AccountSummary extends AccountIdentity {
   plan: 'free' | 'pro';
+  role: 'user' | 'admin';
   aiUsage: number;
   aiLimit: number;
   aiRemaining: number;

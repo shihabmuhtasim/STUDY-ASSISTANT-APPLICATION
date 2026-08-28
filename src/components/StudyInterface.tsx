@@ -17,9 +17,10 @@ interface StudyInterfaceProps {
   account: AccountSummary | AccountIdentity | null;
   onAccountChange: (account: AccountSummary | AccountIdentity | null) => void;
   onUpdateDocument: (document: StudyDocument) => void;
+  onUpgrade: () => void;
 }
 
-export function StudyInterface({ document, onBack, account, onAccountChange, onUpdateDocument }: StudyInterfaceProps) {
+export function StudyInterface({ document, onBack, account, onAccountChange, onUpdateDocument, onUpgrade }: StudyInterfaceProps) {
   const [pageNumber, setPageNumber] = useState(1);
   const [pageImage, setPageImage] = useState<string | null>(null);
   const [pageText, setPageText] = useState('');
@@ -219,6 +220,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     history: currentNote.aiHistory || [],
     account,
     onRemainingChange: handleRemainingChange,
+    onUpgrade,
     onAddInteraction: handleAddInteraction,
     onInsertToNotes: handleInsertToNotes,
   };

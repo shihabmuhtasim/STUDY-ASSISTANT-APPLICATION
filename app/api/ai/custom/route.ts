@@ -3,6 +3,7 @@ import type { AIInteraction, CustomAIConnection } from '../../../../src/types';
 import { verifyFirebaseRequest } from '../../../../server/firebaseUser';
 import { connectionWithDecryptedKey } from '../../../../server/userConnections';
 import { callCustomProvider } from '../../../../server/customProvider';
+import { getAccountSummary } from '../../../../server/accounts';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,8 @@ interface RequestBody {
 export async function POST(request: Request) {
   const user = await verifyFirebaseRequest(request);
   if (!user) return NextResponse.json({ error: 'Sign in again to use your AI connection.' }, { status: 401 });
+  const account = await getAccountSummary(user);
+  if (account.plan !== 'pro' && account.role !== 'admin') return NextResponse.json({ error: 'Custom AI connections are available with Pro.', code: 'PLAN_REQUIRED' }, { status: 403 });
   const body = await request.json().catch(() => null) as RequestBody | null;
   if (!body?.prompt?.trim() || body.prompt.length > 4_000 || !Number.isInteger(body.pageNumber) || (body.pageNumber || 0) < 1) return NextResponse.json({ error: 'Enter a valid question.' }, { status: 400 });
   if (body.pageImage && body.pageImage.length > 4_000_000) return NextResponse.json({ error: 'The page image is too large.' }, { status: 413 });

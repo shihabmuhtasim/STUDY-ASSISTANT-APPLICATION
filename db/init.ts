@@ -12,8 +12,31 @@ export function ensureDatabaseSchema(): Promise<void> {
           email TEXT NOT NULL,
           display_name TEXT NOT NULL,
           plan TEXT NOT NULL DEFAULT 'free',
+          role TEXT NOT NULL DEFAULT 'user',
           created_at INTEGER NOT NULL,
           last_seen_at INTEGER NOT NULL
+        )
+      `),
+      db.prepare(`
+        CREATE TABLE IF NOT EXISTS subscriptions (
+          user_id TEXT PRIMARY KEY NOT NULL,
+          provider TEXT,
+          customer_id TEXT,
+          subscription_id TEXT,
+          status TEXT NOT NULL DEFAULT 'inactive',
+          current_period_end INTEGER,
+          updated_at INTEGER NOT NULL,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+      `),
+      db.prepare(`
+        CREATE TABLE IF NOT EXISTS ai_usage_counters (
+          user_id TEXT NOT NULL,
+          period TEXT NOT NULL,
+          used INTEGER NOT NULL DEFAULT 0,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (user_id, period),
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
       `),
       db.prepare(`

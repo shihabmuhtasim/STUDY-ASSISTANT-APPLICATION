@@ -14,6 +14,11 @@ interface SiteNavigationProps {
 export function SiteNavigation({ account, onLibrary, onPlans, onContact, onAuth, onSignOut }: SiteNavigationProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const accessLabel = account && 'role' in account && account.role === 'admin'
+    ? 'Admin'
+    : account && 'plan' in account && account.plan === 'pro'
+      ? 'Pro'
+      : 'Free';
 
   const run = (action: () => void) => {
     setMenuOpen(false);
@@ -52,8 +57,9 @@ export function SiteNavigation({ account, onLibrary, onPlans, onContact, onAuth,
                   </div>
                   <div className="mt-2 flex items-center justify-between px-2 py-1 text-xs text-slate-500">
                     <span>Access</span>
-                    <span className="rounded-full bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">Full access</span>
+                    <span className={`rounded-full px-2 py-1 font-semibold ${accessLabel === 'Free' ? 'bg-slate-100 text-slate-700' : 'bg-emerald-50 text-emerald-700'}`}>{accessLabel}</span>
                   </div>
+                  {account && 'aiRemaining' in account && <div className="flex items-center justify-between px-2 py-1 text-xs text-slate-500"><span>AI answers left</span><span className="font-semibold text-slate-700">{account.aiRemaining.toLocaleString()}</span></div>}
                   <button type="button" onClick={() => { setAccountOpen(false); onSignOut(); }} className="mt-2 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium text-red-700 hover:bg-red-50"><LogOut size={16} />Sign out</button>
                 </div>
               )}
@@ -71,7 +77,7 @@ export function SiteNavigation({ account, onLibrary, onPlans, onContact, onAuth,
         <button type="button" onClick={() => run(onPlans)} className="block w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">Plans</button>
         <button type="button" onClick={() => run(onContact)} className="block w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">Contact</button>
         <div className="my-2 h-px bg-slate-200" />
-        {account ? <><p className="px-3 pt-2 text-xs font-semibold uppercase text-slate-500">Profile</p><p className="truncate px-3 py-1 text-sm font-medium text-slate-900">{account.displayName}</p><p className="truncate px-3 pb-2 text-xs text-slate-500">{account.email}</p><button type="button" onClick={() => run(onSignOut)} className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm font-medium text-red-700 hover:bg-red-50"><LogOut size={16} />Sign out</button></> : <button type="button" onClick={() => run(onAuth)} className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white"><Sparkles size={16} />Sign in or create account</button>}
+        {account ? <><p className="px-3 pt-2 text-xs font-semibold uppercase text-slate-500">{accessLabel} account</p><p className="truncate px-3 py-1 text-sm font-medium text-slate-900">{account.displayName}</p><p className="truncate px-3 pb-2 text-xs text-slate-500">{account.email}</p><button type="button" onClick={() => run(onSignOut)} className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm font-medium text-red-700 hover:bg-red-50"><LogOut size={16} />Sign out</button></> : <button type="button" onClick={() => run(onAuth)} className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white"><Sparkles size={16} />Sign in or create account</button>}
       </nav>}
     </header>
   );

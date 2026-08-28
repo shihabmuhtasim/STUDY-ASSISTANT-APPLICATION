@@ -1,4 +1,5 @@
 import type { AIInteraction, AIModelPreference } from '../types';
+import { firebaseAuth } from './auth';
 
 export class AIRequestError extends Error {
   constructor(message: string, public code?: string, public status?: number) {
@@ -16,9 +17,14 @@ export async function askAIAboutPage(input: {
   modelPreference: AIModelPreference;
   allowFallback: boolean;
 }): Promise<{ response: string; remaining?: number; provider?: AIInteraction['provider']; model?: string; requestedModel?: AIModelPreference; fallbackUsed?: boolean }> {
+  const user = firebaseAuth.currentUser;
+  if (!user) throw new AIRequestError('Sign in again to use the AI assistant.', 'AUTH_REQUIRED', 401);
   const response = await fetch('/api/ai/chat', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${await user.getIdToken()}`,
+    },
     body: JSON.stringify({
       prompt: input.prompt,
       pageNumber: input.pageNumber,

@@ -3,6 +3,7 @@ const FIREBASE_API_KEY = 'AIzaSyBTQydgSo-CmDM8kAXunBCqqUlKG8oTS5I';
 export interface VerifiedFirebaseUser {
   uid: string;
   email: string;
+  displayName: string;
   idToken: string;
 }
 
@@ -17,7 +18,7 @@ export async function verifyFirebaseRequest(request: Request): Promise<VerifiedF
     body: JSON.stringify({ idToken }),
   });
   if (!response.ok) return null;
-  const data = await response.json() as { users?: Array<{ localId?: string; email?: string }> };
+  const data = await response.json() as { users?: Array<{ localId?: string; email?: string; displayName?: string }> };
   const user = data.users?.[0];
-  return user?.localId ? { uid: user.localId, email: user.email || '', idToken } : null;
+  return user?.localId ? { uid: user.localId, email: user.email || '', displayName: user.displayName || user.email || 'Student', idToken } : null;
 }

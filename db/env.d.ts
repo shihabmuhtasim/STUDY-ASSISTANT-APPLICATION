@@ -11,5 +11,6 @@ declare namespace Cloudflare {
     CLOUDFLARE_AI_TOKEN?: string;
     CLOUDFLARE_AI_MODEL?: string;
     AI_PROVIDER_ORDER?: string;
+    ADMIN_EMAILS?: string;
   }
 }

@@ -10,7 +10,7 @@ import {
   signOut,
   type User,
 } from 'firebase/auth';
-import { doc, getDoc, getFirestore, serverTimestamp, setDoc } from 'firebase/firestore';
+import { getFirestore } from 'firebase/firestore';
 import type { AccountIdentity, AccountSummary } from '../types';
 
 const firebaseConfig = {
@@ -43,43 +43,13 @@ export function accountFromFirebaseUser(user: User): AccountIdentity {
 
 export async function accountSummaryFromFirebaseUser(user: User): Promise<AccountSummary | AccountIdentity> {
   const identity = accountFromFirebaseUser(user);
-  const profileRef = doc(firestore, 'users', user.uid);
-  let snapshot = await getDoc(profileRef);
-
-  if (!snapshot.exists()) {
-    await setDoc(profileRef, {
-      email: identity.email,
-      displayName: identity.displayName,
-      photoURL: user.photoURL || null,
-      plan: 'pro',
-      questionsUsed: 0,
-      questionLimit: 1_000_000,
-      createdAt: serverTimestamp(),
-      lastLoginAt: serverTimestamp(),
-    });
-    snapshot = await getDoc(profileRef);
-  } else {
-    await setDoc(profileRef, {
-      email: identity.email,
-      displayName: identity.displayName,
-      photoURL: user.photoURL || null,
-      plan: 'pro',
-      questionLimit: 1_000_000,
-      lastLoginAt: serverTimestamp(),
-    }, { merge: true });
-    snapshot = await getDoc(profileRef);
-  }
-
-  const profile = snapshot.data();
-  const aiUsage = Number(profile?.questionsUsed) || 0;
-  const aiLimit = Number(profile?.questionLimit) || 100;
-  return {
-    ...identity,
-    plan: 'pro',
-    aiUsage,
-    aiLimit,
-    aiRemaining: Math.max(0, aiLimit - aiUsage),
-  };
+  const response = await fetch('/api/account', {
+    headers: { authorization: `Bearer ${await user.getIdToken()}` },
+    cache: 'no-store',
+  });
+  if (!response.ok) return identity;
+  const data = await response.json() as { account?: AccountSummary };
+  return data.account || identity;
 }
 
 export function subscribeToAccount(callback: (user: User | null) => void) {

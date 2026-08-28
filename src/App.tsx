@@ -46,18 +46,6 @@ export default function App({ initialAccount }: AppProps) {
   const driveSyncedFor = useRef<string | null>(null);
   const legacyDocuments = useRef<StudyDocument[]>([]);
 
-  const refreshAccount = useCallback(async () => {
-    if (!initialAccount) return;
-    try {
-      const response = await fetch('/api/account', { cache: 'no-store' });
-      if (!response.ok) return;
-      const data = await response.json() as { account: AccountSummary | null };
-      setAccount(data.account || initialAccount);
-    } catch (error) {
-      console.error('Failed to refresh account', error);
-    }
-  }, [initialAccount]);
-
   const persistLocalDocuments = useCallback(async (userId: string, nextDocuments: StudyDocument[]) => {
     await setStored(localLibraryKey(userId), nextDocuments);
     legacyDocuments.current = nextDocuments;
@@ -125,10 +113,6 @@ export default function App({ initialAccount }: AppProps) {
         setStorageError('Your cloud library could not be loaded. Local documents are still available.');
       });
   }, [account, documentsLoaded, persistLocalDocuments]);
-
-  useEffect(() => {
-    refreshAccount();
-  }, [refreshAccount]);
 
   useEffect(() => {
     return subscribeToAccount((user) => {
@@ -368,6 +352,7 @@ export default function App({ initialAccount }: AppProps) {
           account={account}
           onAccountChange={setAccount}
           onUpdateDocument={handleUpdateDocument}
+          onUpgrade={() => setInfoView('plans')}
         />
       ) : (
         <Library
