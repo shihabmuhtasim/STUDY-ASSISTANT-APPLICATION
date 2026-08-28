@@ -2,6 +2,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   serverTimestamp,
   setDoc,
@@ -27,6 +28,12 @@ export interface CloudPreferences {
   modelPreference: AIModelPreference;
   allowFallback: boolean;
   selectedConnectionId: string | null;
+}
+
+export interface DriveConnectionState {
+  connected: boolean;
+  connectedAt?: number;
+  updatedAt?: number;
 }
 
 function clean<T>(value: T): T {
@@ -107,6 +114,20 @@ export async function saveCloudPreferences(userId: string, preferences: CloudPre
   await setDoc(doc(firestore, 'users', userId, 'settings', 'preferences'), {
     ...clean(preferences),
     updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
+export async function loadDriveConnection(userId: string): Promise<DriveConnectionState> {
+  const snapshot = await getDoc(doc(firestore, 'users', userId, 'settings', 'drive'));
+  return snapshot.exists() ? snapshot.data() as DriveConnectionState : { connected: false };
+}
+
+export async function saveDriveConnection(userId: string, connected: boolean) {
+  const now = Date.now();
+  await setDoc(doc(firestore, 'users', userId, 'settings', 'drive'), {
+    connected,
+    ...(connected ? { connectedAt: now } : {}),
+    updatedAt: now,
   }, { merge: true });
 }
 

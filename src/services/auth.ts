@@ -31,7 +31,7 @@ const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 const driveProvider = new GoogleAuthProvider();
 driveProvider.addScope('https://www.googleapis.com/auth/drive.file');
-driveProvider.setCustomParameters({ prompt: 'consent select_account' });
+driveProvider.setCustomParameters({ prompt: 'select_account' });
 
 export function accountFromFirebaseUser(user: User): AccountIdentity {
   return {

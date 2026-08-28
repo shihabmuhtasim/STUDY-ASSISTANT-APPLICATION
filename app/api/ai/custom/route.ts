@@ -15,6 +15,7 @@ interface RequestBody {
   documentContext?: string;
   pageImage?: string;
   history?: AIInteraction[];
+  testMode?: boolean;
 }
 
 export async function POST(request: Request) {
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
       documentContext: body.documentContext?.slice(0, 48_000) || '',
       pageImage: body.pageImage,
       history: body.history?.slice(-3) || [],
+      testMode: body.testMode === true,
     });
     return NextResponse.json(result, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {

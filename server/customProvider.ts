@@ -10,6 +10,7 @@ export interface CustomProviderInput {
   documentContext: string;
   pageImage?: string;
   history: AIInteraction[];
+  testMode?: boolean;
 }
 
 function buildContext(input: CustomProviderInput) {
@@ -19,11 +20,14 @@ function buildContext(input: CustomProviderInput) {
   return `Current document page: ${input.pageNumber}\n\nCurrent page text (primary focus):\n${page}\n\nWhole document context (consult when useful):\n${document}${history ? `\n\nRecent conversation on page ${input.pageNumber}:\n${history}` : ''}\n\nStudent question:\n${input.prompt}`;
 }
 
-async function providerFetch(url: string, init: RequestInit) {
+async function providerFetch(url: string, init: RequestInit, timeoutMs = 60_000) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45_000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw new Error(`The provider did not respond within ${Math.round(timeoutMs / 1_000)} seconds.`);
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -47,6 +51,8 @@ function safeEndpoint(baseUrl: string) {
 }
 
 async function openAICompatible(input: CustomProviderInput, promptContext: string) {
+  const isNvidia = input.connection.service === 'nvidia';
+  const isNvidiaDeepSeek = isNvidia && /deepseek/i.test(input.connection.model);
   const canUseImage = input.connection.service !== 'nvidia' || /(vision|multimodal|omni|muse-glimmer|\bvl\b)/i.test(input.connection.model);
   const userContent: string | Array<Record<string, unknown>> = input.pageImage && canUseImage
     ? [{ type: 'text', text: promptContext }, { type: 'image_url', image_url: { url: input.pageImage } }]
@@ -55,15 +61,25 @@ async function openAICompatible(input: CustomProviderInput, promptContext: strin
     method: 'POST',
     headers: {
       'content-type': 'application/json',
+      accept: 'application/json',
       authorization: `Bearer ${input.connection.apiKey}`,
       ...(input.connection.service === 'openrouter' ? { 'HTTP-Referer': 'https://ai-pdf-study-assistant.pages.dev', 'X-Title': 'Study Assistant' } : {}),
     },
-    body: JSON.stringify({ model: input.connection.model, messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: userContent }], max_tokens: 3_000, temperature: 0.2 }),
-  });
+    body: JSON.stringify({
+      model: input.connection.model,
+      messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: userContent }],
+      max_tokens: input.testMode ? 96 : 3_000,
+      temperature: isNvidiaDeepSeek ? 1 : 0.2,
+      ...(isNvidiaDeepSeek ? { top_p: 0.95, chat_template_kwargs: { thinking: false } } : {}),
+      stream: false,
+    }),
+  }, input.testMode ? 20_000 : 60_000);
+  if (response.status === 202) throw new Error('The provider queued the request instead of answering. Try the test again shortly.');
   if (!response.ok) throw new Error(await errorMessage(response));
-  const data = await response.json() as { choices?: Array<{ message?: { content?: string | Array<{ text?: string }> } }> };
+  const data = await response.json() as { choices?: Array<{ message?: { content?: string | Array<{ text?: string }>; reasoning?: string; reasoning_content?: string } }> };
   const content = data.choices?.[0]?.message?.content;
-  const text = typeof content === 'string' ? content : content?.map((part) => part.text || '').join('');
+  const reasoning = data.choices?.[0]?.message?.reasoning || data.choices?.[0]?.message?.reasoning_content;
+  const text = (typeof content === 'string' ? content : content?.map((part) => part.text || '').join('')) || reasoning;
   if (!text?.trim()) throw new Error('The provider returned an empty response.');
   return text.trim();
 }

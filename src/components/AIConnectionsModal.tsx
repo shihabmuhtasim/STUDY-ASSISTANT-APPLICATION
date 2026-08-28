@@ -100,7 +100,7 @@ export function AIConnectionsModal({ isOpen, connections, selectedId, onSelect, 
       setTestState({ id: connection.id, status: 'error', message: 'Replace this with the NVIDIA key beginning with nvapi-, not the model ID.' });
       return;
     }
-    setTestState({ id: connection.id, status: 'testing' });
+    setTestState({ id: connection.id, status: 'testing', message: 'Contacting the provider…' });
     try {
       await testCustomAIConnection(connection);
       setTestState({ id: connection.id, status: 'success', message: 'Connection works.' });
@@ -134,7 +134,7 @@ export function AIConnectionsModal({ isOpen, connections, selectedId, onSelect, 
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-slate-800 truncate">{connection.name}</p>
                       <p className="text-xs text-slate-500 truncate">{serviceDetails(connection.service).label} · {connection.model} · {connection.keyHint ? `••••${connection.keyHint}` : maskedKey(connection.apiKey)}</p>
-                      {testState?.id === connection.id && testState.message && <p className={`mt-1 text-xs ${testState.status === 'success' ? 'text-emerald-700' : 'text-red-700'}`}>{testState.message}</p>}
+                      {testState?.id === connection.id && testState.message && <p className={`mt-1 text-xs ${testState.status === 'success' ? 'text-emerald-700' : testState.status === 'testing' ? 'text-indigo-700' : 'text-red-700'}`}>{testState.message}</p>}
                     </div>
                     <button type="button" onClick={() => testConnection(connection)} disabled={testState?.id === connection.id && testState.status === 'testing'} className="px-2.5 py-1.5 text-xs font-medium text-indigo-700 border border-indigo-200 rounded-md hover:bg-indigo-50 disabled:opacity-50">
                       {testState?.id === connection.id && testState.status === 'testing' ? <Loader2 size={14} className="animate-spin" /> : testState?.id === connection.id && testState.status === 'success' ? <CheckCircle2 size={14} /> : 'Test'}

@@ -9,15 +9,15 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Library } from './components/Library';
 import dynamic from 'next/dynamic';
 import { AccountIdentity, AccountSummary, StudyDocument } from './types';
-import { get, set, del } from 'idb-keyval';
+import { get, del } from 'idb-keyval';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { SiteNavigation } from './components/SiteNavigation';
 import { SiteInfoModal } from './components/SiteInfoModal';
 import { AuthModal } from './components/AuthModal';
 import { accountSummaryFromFirebaseUser, signOutAccount, subscribeToAccount } from './services/auth';
 import { connectGoogleDrive } from './services/auth';
-import { deleteCloudDocument, loadCloudDocuments, saveCloudDocument } from './services/cloudData';
-import { deleteDocumentFromDrive, downloadDocumentFromDrive, uploadDocumentToDrive } from './services/googleDrive';
+import { deleteCloudDocument, loadCloudDocuments, loadDriveConnection, saveCloudDocument, saveDriveConnection } from './services/cloudData';
+import { clearDriveSession, deleteDocumentFromDrive, downloadDocumentFromDrive, loadDriveSession, saveDriveSession, uploadDocumentToDrive, validateDriveToken } from './services/googleDrive';
 
 const StudyInterface = dynamic(
   () => import('./components/StudyInterface').then((module) => module.StudyInterface),
@@ -37,9 +37,12 @@ export default function App({ initialAccount }: AppProps) {
   const [infoView, setInfoView] = useState<'plans' | 'contact' | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [driveToken, setDriveToken] = useState<string | null>(null);
+  const [driveLinked, setDriveLinked] = useState(false);
   const [driveBusy, setDriveBusy] = useState(false);
   const [cloudMessage, setCloudMessage] = useState<string | null>(null);
   const cloudLoadedFor = useRef<string | null>(null);
+  const driveSyncedFor = useRef<string | null>(null);
+  const legacyDocuments = useRef<StudyDocument[]>([]);
 
   const refreshAccount = useCallback(async () => {
     if (!initialAccount) return;
@@ -57,12 +60,10 @@ export default function App({ initialAccount }: AppProps) {
     async function loadDocs() {
       try {
         const savedDocs = await get('study_documents');
-        if (savedDocs) {
-          setDocuments(savedDocs);
-        }
+        if (Array.isArray(savedDocs)) legacyDocuments.current = savedDocs;
       } catch (e) {
         console.error("Failed to load documents from IndexedDB", e);
-        setStorageError('Local storage is unavailable. New documents may not persist after you close this tab.');
+        setStorageError('An older browser-saved library could not be read. New documents will still be stored in Google Drive.');
       } finally {
         setDocumentsLoaded(true);
       }
@@ -76,7 +77,8 @@ export default function App({ initialAccount }: AppProps) {
     loadCloudDocuments(account.userId)
       .then((cloudDocuments) => {
         setDocuments((current) => {
-          const merged = current.map((local) => {
+          const localDocuments = current.length ? current : legacyDocuments.current;
+          const merged = localDocuments.map((local) => {
             const cloud = cloudDocuments.find((item) => item.id === local.id);
             return cloud ? { ...local, ...cloud, fileData: local.fileData, cloudStatus: cloud.driveFileId ? 'synced' as const : 'local' as const } : { ...local, cloudStatus: 'local' as const };
           });
@@ -99,6 +101,9 @@ export default function App({ initialAccount }: AppProps) {
     return subscribeToAccount((user) => {
       if (!user) {
         setAccount(null);
+        setDocuments([]);
+        setDriveToken(null);
+        setDriveLinked(false);
         return;
       }
       accountSummaryFromFirebaseUser(user)
@@ -113,28 +118,93 @@ export default function App({ initialAccount }: AppProps) {
     });
   }, []);
 
-  const handleAddDocument = async (doc: StudyDocument) => {
-    let nextDocument: StudyDocument = { ...doc, mimeType: doc.fileData instanceof Blob ? doc.fileData.type : 'application/pdf', fileSize: doc.fileData instanceof Blob ? doc.fileData.size : undefined, cloudStatus: driveToken ? 'syncing' : 'local' };
-    if (account) saveCloudDocument(account.userId, nextDocument).catch((error) => console.error('Failed to save cloud metadata', error));
-    if (account && driveToken) {
-      try {
-        const driveFile = await uploadDocumentToDrive(nextDocument, driveToken);
-        nextDocument = { ...nextDocument, driveFileId: driveFile.id, mimeType: driveFile.mimeType, fileSize: Number(driveFile.size) || nextDocument.fileSize, cloudStatus: 'synced' };
-        await saveCloudDocument(account.userId, nextDocument);
-      } catch (error) {
-        console.error('Drive upload failed', error);
-        nextDocument = { ...nextDocument, cloudStatus: 'error' };
-        setCloudMessage('The document is available locally, but Google Drive upload failed. Reconnect Drive to retry.');
+  const synchronizeDrive = useCallback(async (token: string, announce = true) => {
+    if (!account) return;
+    setDriveBusy(true);
+    try {
+      const cloudDocuments = await loadCloudDocuments(account.userId);
+      const synchronizedById = new Map<string, StudyDocument>();
+      const localDocuments = new Map<string, StudyDocument>();
+      legacyDocuments.current.forEach((document) => localDocuments.set(document.id, document));
+      documents.forEach((document) => localDocuments.set(document.id, document));
+
+      for (const local of localDocuments.values()) {
+        if (!local.fileData) continue;
+        let next: StudyDocument = { ...local, cloudStatus: 'syncing' };
+        if (!next.driveFileId) {
+          const uploaded = await uploadDocumentToDrive(next, token);
+          next = { ...next, driveFileId: uploaded.id, mimeType: uploaded.mimeType, fileSize: Number(uploaded.size) || next.fileSize, cloudStatus: 'synced' };
+        } else {
+          next.cloudStatus = 'synced';
+        }
+        await saveCloudDocument(account.userId, next);
+        synchronizedById.set(next.id, next);
       }
+
+      for (const cloud of cloudDocuments) {
+        if (synchronizedById.has(cloud.id) || !cloud.driveFileId) continue;
+        const fileData = await downloadDocumentFromDrive(cloud.driveFileId, token);
+        synchronizedById.set(cloud.id, { ...cloud, fileData, cloudStatus: 'synced' });
+      }
+
+      const synchronized = [...synchronizedById.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+      setDocuments(synchronized);
+      await del('study_documents');
+      legacyDocuments.current = [];
+      if (announce) setCloudMessage(`Google Drive synchronized. ${synchronized.length} document${synchronized.length === 1 ? '' : 's'} available.`);
+    } finally {
+      setDriveBusy(false);
     }
+  }, [account, documents]);
+
+  useEffect(() => {
+    const userId = account?.userId;
+    if (!userId) {
+      setDriveLinked(false);
+      setDriveToken(null);
+      return;
+    }
+    let cancelled = false;
+    driveSyncedFor.current = null;
+    loadDriveConnection(userId)
+      .then(async (status) => {
+        if (cancelled) return;
+        setDriveLinked(status.connected);
+        const sessionToken = loadDriveSession(userId);
+        if (sessionToken && await validateDriveToken(sessionToken)) {
+          if (!cancelled) setDriveToken(sessionToken);
+          return;
+        }
+        clearDriveSession();
+        setDriveToken(null);
+        if (status.connected) setCloudMessage('Google Drive is linked to your account. Reconnect once in this browser to load your document files.');
+      })
+      .catch((error) => console.error('Failed to restore Google Drive connection', error));
+    return () => { cancelled = true; };
+  }, [account?.userId]);
+
+  useEffect(() => {
+    if (!account || !documentsLoaded || !driveToken) return;
+    const syncKey = `${account.userId}:${driveToken}`;
+    if (driveSyncedFor.current === syncKey) return;
+    driveSyncedFor.current = syncKey;
+    synchronizeDrive(driveToken, false)
+      .then(() => setCloudMessage('Google Drive reconnected and synchronized automatically.'))
+      .catch((error) => {
+        driveSyncedFor.current = null;
+        setCloudMessage(error instanceof Error ? error.message : 'Google Drive synchronization failed.');
+      });
+  }, [account, documentsLoaded, driveToken, synchronizeDrive]);
+
+  const handleAddDocument = async (doc: StudyDocument) => {
+    if (!account || !driveToken) throw new Error('Connect Google Drive before adding a document.');
+    let nextDocument: StudyDocument = { ...doc, mimeType: doc.fileData instanceof Blob ? doc.fileData.type : 'application/pdf', fileSize: doc.fileData instanceof Blob ? doc.fileData.size : undefined, cloudStatus: 'syncing' };
+    const driveFile = await uploadDocumentToDrive(nextDocument, driveToken);
+    nextDocument = { ...nextDocument, driveFileId: driveFile.id, mimeType: driveFile.mimeType, fileSize: Number(driveFile.size) || nextDocument.fileSize, cloudStatus: 'synced' };
+    await saveCloudDocument(account.userId, nextDocument);
     const newDocs = [...documents, nextDocument];
     setDocuments(newDocs);
-    try {
-      await set('study_documents', newDocs);
-    } catch (error) {
-      console.error('Failed to save document', error);
-      setStorageError('This document could not be saved on the device. Check browser storage permissions.');
-    }
+    return nextDocument;
   };
 
   const handleDeleteDocument = async (id: string) => {
@@ -142,7 +212,6 @@ export default function App({ initialAccount }: AppProps) {
     const newDocs = documents.filter(d => d.id !== id);
     setDocuments(newDocs);
     try {
-      await set('study_documents', newDocs);
       await del(`notes_${id}`);
       await del(`annotations_${id}`);
       if (account) await deleteCloudDocument(account.userId, id);
@@ -158,7 +227,6 @@ export default function App({ initialAccount }: AppProps) {
     setDocuments(newDocs);
     setCurrentDocument((current) => current?.id === updated.id ? updated : current);
     try {
-      await set('study_documents', newDocs);
       if (account) await saveCloudDocument(account.userId, updated);
     } catch (error) {
       console.error('Failed to update document', error);
@@ -168,46 +236,48 @@ export default function App({ initialAccount }: AppProps) {
 
   const handleConnectDrive = async () => {
     if (!account || driveBusy) return;
-    const confirmed = window.confirm(
-      'Connect Google Drive and synchronize your Study Assistant library? Existing documents in this browser will be uploaded to your own Google Drive account.',
-    );
-    if (!confirmed) return;
+    if (driveToken) {
+      try {
+        await synchronizeDrive(driveToken);
+      } catch (error) {
+        setCloudMessage(error instanceof Error ? error.message : 'Google Drive synchronization failed.');
+      }
+      return;
+    }
+    if (!driveLinked) {
+      const confirmed = window.confirm(
+        'Connect Google Drive and synchronize your Study Assistant library? Existing documents in this browser will be uploaded to your own Google Drive account.',
+      );
+      if (!confirmed) return;
+    }
     setDriveBusy(true);
     setCloudMessage('Connecting Google Drive and synchronizing your library…');
     try {
       const token = await connectGoogleDrive();
       setDriveToken(token);
-      const cloudDocuments = await loadCloudDocuments(account.userId);
-      const localById = new Map(documents.map((document) => [document.id, document]));
-      const synchronized: StudyDocument[] = [];
-
-      for (const local of documents) {
-        let next: StudyDocument = { ...local, cloudStatus: 'syncing' };
-        if (!next.driveFileId) {
-          const uploaded = await uploadDocumentToDrive(next, token);
-          next = { ...next, driveFileId: uploaded.id, mimeType: uploaded.mimeType, fileSize: Number(uploaded.size) || next.fileSize, cloudStatus: 'synced' };
-        } else {
-          next.cloudStatus = 'synced';
-        }
-        await saveCloudDocument(account.userId, next);
-        synchronized.push(next);
-      }
-
-      for (const cloud of cloudDocuments) {
-        if (localById.has(cloud.id) || !cloud.driveFileId) continue;
-        const fileData = await downloadDocumentFromDrive(cloud.driveFileId, token);
-        synchronized.push({ ...cloud, fileData, cloudStatus: 'synced' });
-      }
-
-      setDocuments(synchronized);
-      await set('study_documents', synchronized);
-      setCloudMessage(`Google Drive connected. ${synchronized.length} document${synchronized.length === 1 ? '' : 's'} synchronized.`);
+      setDriveLinked(true);
+      saveDriveSession(account.userId, token);
+      await saveDriveConnection(account.userId, true);
+      driveSyncedFor.current = `${account.userId}:${token}`;
+      await synchronizeDrive(token);
     } catch (error) {
       console.error('Google Drive synchronization failed', error);
       setCloudMessage(error instanceof Error ? error.message : 'Google Drive could not be connected.');
     } finally {
       setDriveBusy(false);
     }
+  };
+
+  const handleDisconnectDrive = async () => {
+    if (!account || !driveLinked || driveBusy) return;
+    if (!window.confirm('Disconnect Google Drive from this Study Assistant account? Your files will remain in Google Drive.')) return;
+    clearDriveSession();
+    setDriveToken(null);
+    setDriveLinked(false);
+    setDocuments([]);
+    driveSyncedFor.current = null;
+    await saveDriveConnection(account.userId, false);
+    setCloudMessage('Google Drive disconnected. Your files remain in Google Drive.');
   };
 
   return (
@@ -219,7 +289,7 @@ export default function App({ initialAccount }: AppProps) {
         onPlans={() => setInfoView('plans')}
         onContact={() => setInfoView('contact')}
         onAuth={() => setAuthOpen(true)}
-        onSignOut={() => { signOutAccount().catch(() => undefined); setAccount(null); setDriveToken(null); cloudLoadedFor.current = null; }}
+        onSignOut={() => { signOutAccount().catch(() => undefined); clearDriveSession(); setAccount(null); setDocuments([]); setDriveToken(null); setDriveLinked(false); cloudLoadedFor.current = null; driveSyncedFor.current = null; }}
       />
       {storageError && (
         <div role="alert" className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center text-sm text-amber-900">
@@ -246,9 +316,11 @@ export default function App({ initialAccount }: AppProps) {
           account={account}
           onRequireAuth={() => setAuthOpen(true)}
           driveConnected={Boolean(driveToken)}
+          driveLinked={driveLinked}
           driveBusy={driveBusy}
           cloudMessage={cloudMessage}
           onConnectDrive={handleConnectDrive}
+          onDisconnectDrive={handleDisconnectDrive}
         />
       )}
       </div>

@@ -7,18 +7,20 @@ import { DOCUMENT_ACCEPT, prepareStudyFile } from '../utils/documentImport';
 interface LibraryProps {
   documents: StudyDocument[];
   onOpenDocument: (doc: StudyDocument) => void;
-  onAddDocument: (doc: StudyDocument) => void;
+  onAddDocument: (doc: StudyDocument) => Promise<StudyDocument>;
   onDeleteDocument: (id: string) => void;
   onUpdateDocument: (doc: StudyDocument) => void;
   account: AccountSummary | AccountIdentity | null;
   onRequireAuth: () => void;
   driveConnected: boolean;
+  driveLinked: boolean;
   driveBusy: boolean;
   cloudMessage: string | null;
   onConnectDrive: () => void;
+  onDisconnectDrive: () => void;
 }
 
-export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocument, onUpdateDocument, account, onRequireAuth, driveConnected, driveBusy, cloudMessage, onConnectDrive }: LibraryProps) {
+export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocument, onUpdateDocument, account, onRequireAuth, driveConnected, driveLinked, driveBusy, cloudMessage, onConnectDrive, onDisconnectDrive }: LibraryProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [query, setQuery] = useState('');
@@ -40,6 +42,11 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
       onRequireAuth();
       return;
     }
+    if (!driveConnected) {
+      setError(driveLinked ? 'Reconnect Google Drive before adding a document.' : 'Connect Google Drive before adding a document.');
+      onConnectDrive();
+      return;
+    }
     setError(null);
     setIsImporting(true);
     try {
@@ -56,8 +63,8 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
         createdAt: now,
         updatedAt: now,
       };
-      onAddDocument(newDocument);
-      onOpenDocument(newDocument);
+      const savedDocument = await onAddDocument(newDocument);
+      onOpenDocument(savedDocument);
     } catch (fileError) {
       setError(fileError instanceof Error ? fileError.message : 'The document could not be prepared for the study workspace.');
     } finally {
@@ -94,12 +101,15 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
           <div className="mb-5 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
               <span className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg ${driveConnected ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{driveConnected ? <Cloud size={18} /> : <CloudOff size={18} />}</span>
-              <div><p className="text-sm font-semibold text-slate-900">Google Drive document sync</p><p className="mt-0.5 text-xs text-slate-500">Notes and study history sync through your account. Connect Drive to make the document files available on every device.</p></div>
+              <div><p className="text-sm font-semibold text-slate-900">Google Drive document sync</p><p className="mt-0.5 text-xs text-slate-500">{driveConnected ? 'Connected and synchronized for this browser session.' : driveLinked ? 'Linked to your account. Reconnect to load document files in this browser.' : 'Connect once to store document files in your own Google Drive.'}</p></div>
             </div>
-            <button type="button" onClick={onConnectDrive} disabled={driveBusy} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-60">
-              {driveBusy ? <Loader2 size={16} className="animate-spin" /> : driveConnected ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Cloud size={16} />}
-              {driveBusy ? 'Synchronizing…' : driveConnected ? 'Sync now' : 'Connect Google Drive'}
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              {driveLinked && <button type="button" onClick={onDisconnectDrive} disabled={driveBusy} className="px-3 py-2 text-xs font-medium text-slate-500 hover:text-red-700 disabled:opacity-50">Disconnect</button>}
+              <button type="button" onClick={onConnectDrive} disabled={driveBusy} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-60">
+                {driveBusy ? <Loader2 size={16} className="animate-spin" /> : driveConnected ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Cloud size={16} />}
+                {driveBusy ? 'Synchronizing…' : driveConnected ? 'Sync now' : driveLinked ? 'Reconnect Drive' : 'Connect Google Drive'}
+              </button>
+            </div>
           </div>
         )}
 
@@ -121,9 +131,9 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
           <span className="mx-auto grid h-12 w-12 place-items-center rounded-lg bg-indigo-50 text-indigo-700"><Upload size={24} /></span>
           <h2 className="mt-3 text-lg font-semibold text-slate-900">Add a document</h2>
           <p className="mt-1 text-sm text-slate-500">PDF, Word, text, Markdown, HTML, RTF, and CSV files are supported.</p>
-          <button type="button" disabled={isImporting} onClick={() => account ? fileInputRef.current?.click() : onRequireAuth()} className="mt-5 inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 text-sm disabled:opacity-60">
+          <button type="button" disabled={isImporting || driveBusy} onClick={() => !account ? onRequireAuth() : driveConnected ? fileInputRef.current?.click() : onConnectDrive()} className="mt-5 inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 text-sm disabled:opacity-60">
             {isImporting && <Loader2 size={15} className="animate-spin" />}
-            {isImporting ? 'Preparing document…' : account ? 'Select document' : 'Sign in to add a document'}
+            {isImporting ? 'Uploading to Google Drive…' : !account ? 'Sign in to add a document' : driveConnected ? 'Select document' : driveLinked ? 'Reconnect Drive to add a document' : 'Connect Drive to add a document'}
           </button>
           <input
             type="file"

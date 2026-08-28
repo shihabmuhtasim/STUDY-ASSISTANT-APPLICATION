@@ -10,19 +10,31 @@ interface CustomAIInput {
   documentContext: string;
   pageImage?: string;
   history: AIInteraction[];
+  testMode?: boolean;
 }
 
-async function authenticatedRequest(path: string, init: RequestInit) {
+async function authenticatedRequest(path: string, init: RequestInit, timeoutMs = 75_000) {
   const user = firebaseAuth.currentUser;
   if (!user) throw new AIRequestError('Sign in again to use your saved AI models.', 'CUSTOM_AUTH');
-  const response = await fetch(path, {
-    ...init,
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${await user.getIdToken()}`,
-      ...init.headers,
-    },
-  });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${await user.getIdToken()}`,
+        ...init.headers,
+      },
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw new AIRequestError(`The provider did not respond within ${Math.round(timeoutMs / 1_000)} seconds.`, 'CUSTOM_TIMEOUT', 504);
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
   const data = await response.json().catch(() => ({})) as { error?: string; response?: string; provider?: 'custom'; model?: string };
   if (!response.ok) throw new AIRequestError(data.error || `Provider returned ${response.status}.`, `CUSTOM_${response.status}`, response.status);
   return data;
@@ -39,8 +51,9 @@ export async function askCustomAI(input: CustomAIInput) {
       documentContext: input.documentContext,
       pageImage: input.pageImage,
       history: input.history,
+      testMode: input.testMode === true,
     }),
-  });
+  }, input.testMode ? 25_000 : 75_000);
   if (!data.response?.trim()) throw new AIRequestError('The provider returned an empty response.', 'CUSTOM_EMPTY');
   return { response: data.response, provider: 'custom' as const, model: data.model || input.connection.model };
 }
@@ -53,5 +66,6 @@ export async function testCustomAIConnection(connection: CustomAIConnection) {
     pageText: 'This is a connection test.',
     documentContext: '[Page 1] This is a connection test.',
     history: [],
+    testMode: true,
   });
 }
