@@ -1,6 +1,7 @@
 import type { AIInteraction, CustomAIConnection } from '../src/types';
 
 const SYSTEM_PROMPT = `You are a careful, capable study assistant working from a supplied document. Focus first on the current page and explain it in the context of the whole document. Use other pages when the question requires background, comparison, or information not repeated on the current page. If the document does not contain the answer, say so clearly. Preserve important names, numbers, formulas, and qualifications. Explain concepts in plain language, organize longer answers with short headings and bullets, and cite page numbers when referring to evidence. Match the student's requested language.`;
+const NVIDIA_CHAT_ENDPOINT = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
 export interface CustomProviderInput {
   connection: CustomAIConnection;
@@ -51,8 +52,6 @@ function safeEndpoint(baseUrl: string) {
 }
 
 async function openAICompatible(input: CustomProviderInput, promptContext: string) {
-  const isNvidia = input.connection.service === 'nvidia';
-  const isNvidiaDeepSeek = isNvidia && /deepseek/i.test(input.connection.model);
   const canUseImage = input.connection.service !== 'nvidia' || /(vision|multimodal|omni|muse-glimmer|\bvl\b)/i.test(input.connection.model);
   const userContent: string | Array<Record<string, unknown>> = input.pageImage && canUseImage
     ? [{ type: 'text', text: promptContext }, { type: 'image_url', image_url: { url: input.pageImage } }]
@@ -69,8 +68,7 @@ async function openAICompatible(input: CustomProviderInput, promptContext: strin
       model: input.connection.model,
       messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: userContent }],
       max_tokens: input.testMode ? 96 : 3_000,
-      temperature: isNvidiaDeepSeek ? 1 : 0.2,
-      ...(isNvidiaDeepSeek ? { top_p: 0.95, chat_template_kwargs: { thinking: false } } : {}),
+      temperature: 0.2,
       stream: false,
     }),
   }, 60_000);
@@ -81,6 +79,36 @@ async function openAICompatible(input: CustomProviderInput, promptContext: strin
   const reasoning = data.choices?.[0]?.message?.reasoning || data.choices?.[0]?.message?.reasoning_content;
   const text = (typeof content === 'string' ? content : content?.map((part) => part.text || '').join('')) || reasoning;
   if (!text?.trim()) throw new Error('The provider returned an empty response.');
+  return text.trim();
+}
+
+async function nvidia(input: CustomProviderInput, promptContext: string) {
+  // Keep this request aligned with the dedicated NVIDIA relay that was proven
+  // to work before connections moved to encrypted account storage.
+  const response = await providerFetch(NVIDIA_CHAT_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${input.connection.apiKey.trim()}`,
+    },
+    body: JSON.stringify({
+      model: input.connection.model.trim(),
+      messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: promptContext }],
+      max_tokens: 3_000,
+      temperature: 0.2,
+    }),
+  }, 60_000);
+  if (!response.ok) {
+    const message = response.status === 401
+      ? 'NVIDIA rejected this API key. Edit the connection and paste the generated key beginning with nvapi-.'
+      : await errorMessage(response);
+    throw new Error(message);
+  }
+  const data = await response.json() as { choices?: Array<{ message?: { content?: string | Array<{ text?: string }>; reasoning?: string; reasoning_content?: string } }> };
+  const content = data.choices?.[0]?.message?.content;
+  const reasoning = data.choices?.[0]?.message?.reasoning || data.choices?.[0]?.message?.reasoning_content;
+  const text = (typeof content === 'string' ? content : content?.map((part) => part.text || '').join('')) || reasoning;
+  if (!text?.trim()) throw new Error('NVIDIA returned an empty response.');
   return text.trim();
 }
 
@@ -123,7 +151,9 @@ async function anthropic(input: CustomProviderInput, promptContext: string) {
 export async function callCustomProvider(input: CustomProviderInput) {
   if (!input.connection.apiKey) throw new Error('This connection has no API key.');
   const promptContext = buildContext(input);
-  const response = input.connection.provider === 'gemini'
+  const response = input.connection.service === 'nvidia'
+    ? await nvidia(input, promptContext)
+    : input.connection.provider === 'gemini'
     ? await gemini(input, promptContext)
     : input.connection.provider === 'anthropic'
       ? await anthropic(input, promptContext)
