@@ -7,6 +7,9 @@ const clientDir = join(root, 'dist', 'client');
 const serverDir = join(root, 'dist', 'server');
 const outputDir = join(root, 'dist', 'pages');
 
+// Vinext writes a Worker deploy redirect during build. Pages must use the
+// repository's Pages config so production bindings (including Workers AI) apply.
+await rm(join(root, '.wrangler', 'deploy', 'config.json'), { force: true });
 await rm(outputDir, { recursive: true, force: true });
 await mkdir(join(outputDir, '_server'), { recursive: true });
 await cp(clientDir, outputDir, { recursive: true });
