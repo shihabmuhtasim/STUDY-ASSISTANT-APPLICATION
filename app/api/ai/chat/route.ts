@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { routeAIRequest, type AIRequest } from '../../../../server/aiRouter';
-import { getAccountSummary, recordAIUsage, releaseAIAllowance, reserveAIAllowance, settleAIAllowance } from '../../../../server/accounts';
+import { getAccountSummary, recordAIRequestEvent, recordAIUsage, releaseAIAllowance, reserveAIAllowance, settleAIAllowance } from '../../../../server/accounts';
 import { verifyFirebaseRequest } from '../../../../server/firebaseUser';
 import { FREE_AI_MODEL, estimateAIUsageUnits, remainingPercentage } from '../../../../server/aiUsage';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   const user = await verifyFirebaseRequest(request);
   if (!user) return NextResponse.json({ error: 'Sign in again to use the AI assistant.', code: 'AUTH_REQUIRED' }, { status: 401 });
   let body: AIRequest;
@@ -80,6 +81,14 @@ export async function POST(request: Request) {
     });
     const used = await settleAIAllowance(user.uid, allowance.reservedUnits, actualUnits, account.aiLimit);
     const remaining = Math.max(0, account.aiLimit - used);
+    await recordAIRequestEvent({
+      userId: user.uid,
+      provider: result.provider,
+      model: result.model,
+      status: result.provider === 'local' || result.fallbackUsed ? 'fallback' : 'success',
+      latencyMs: Date.now() - startedAt,
+      usageUnits: actualUnits,
+    }).catch((eventError) => console.error('Failed to record AI request health', eventError));
     return NextResponse.json({
       response: result.text,
       remaining,
@@ -93,6 +102,15 @@ export async function POST(request: Request) {
   } catch (error) {
     await releaseAIAllowance(user.uid, allowance.reservedUnits).catch(() => undefined);
     const code = error instanceof Error ? error.message : 'AI_UNAVAILABLE';
+    await recordAIRequestEvent({
+      userId: user.uid,
+      provider: 'hosted',
+      model: String(requestedPreference),
+      status: 'error',
+      errorCode: code.slice(0, 120),
+      latencyMs: Date.now() - startedAt,
+      usageUnits: 0,
+    }).catch((eventError) => console.error('Failed to record AI request error', eventError));
     console.error('AI request failed', error);
     return NextResponse.json({ error: 'The assistant could not process this page. Try the question again.', code }, { status: 503 });
   }

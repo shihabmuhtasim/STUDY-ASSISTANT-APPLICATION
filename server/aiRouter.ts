@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { FREE_AI_MODEL } from './aiUsage';
+import { getAIControlState } from './modelControls';
 
 export type AIHistoryItem = { prompt: string; response: string };
 export type AIModelPreference = 'auto' | 'basic' | 'gemini-flash' | 'gemini-flash-lite' | 'qwen' | 'llama' | 'gemma' | 'glm' | 'nemotron';
@@ -35,19 +36,21 @@ const MODEL_TARGETS: Record<Exclude<AIModelPreference, 'auto'>, { provider: 'gem
 };
 
 export async function routeAIRequest(request: AIRequest): Promise<AIResult> {
+  const controls = await getAIControlState();
+  if (controls.paused) return { ...runLocalPageAnswer(request), requestedModel: normalizePreference(request.modelPreference), fallbackUsed: true };
   const preference = normalizePreference(request.modelPreference);
   const preferredTarget = preference === 'auto' ? null : MODEL_TARGETS[preference];
   const runners: Array<() => Promise<AIResult>> = [];
 
-  if (preferredTarget?.provider === 'gemini' && env.GEMINI_API_KEY) runners.push(() => runGemini(request, [preferredTarget.model]));
-  if (preferredTarget?.provider === 'cloudflare' && env.AI) runners.push(() => runCloudflare(request, [preferredTarget.model]));
+  if (preferredTarget?.provider === 'gemini' && env.GEMINI_API_KEY && !controls.disabledModels.has(preferredTarget.model)) runners.push(() => runGemini(request, [preferredTarget.model], controls.disabledModels));
+  if (preferredTarget?.provider === 'cloudflare' && env.AI && !controls.disabledModels.has(preferredTarget.model)) runners.push(() => runCloudflare(request, [preferredTarget.model], controls.disabledModels));
   if (preferredTarget?.provider === 'cloudflare' && !env.AI && env.CLOUDFLARE_AI_ENDPOINT) runners.push(() => runRemoteCloudflare(request));
 
   if (preference === 'auto' || request.allowFallback !== false) {
     const remainingGemini = GEMINI_MODELS.filter((model) => model !== preferredTarget?.model);
     const remainingCloudflare = TEXT_MODELS.filter((model) => model !== preferredTarget?.model);
-    if (env.GEMINI_API_KEY && remainingGemini.length) runners.push(() => runGemini(request, remainingGemini));
-    if (env.AI) runners.push(() => runCloudflare(request, remainingCloudflare));
+    if (env.GEMINI_API_KEY && remainingGemini.length) runners.push(() => runGemini(request, remainingGemini, controls.disabledModels));
+    if (env.AI) runners.push(() => runCloudflare(request, remainingCloudflare, controls.disabledModels));
     if (!env.AI && env.CLOUDFLARE_AI_ENDPOINT) runners.push(() => runRemoteCloudflare(request));
   }
 
@@ -78,12 +81,12 @@ async function runRemoteCloudflare(request: AIRequest): Promise<AIResult> {
   return { text: data.response, provider: data.provider || 'cloudflare', model: data.model || TEXT_MODELS[0] };
 }
 
-async function runCloudflare(request: AIRequest, requestedModels?: string[]): Promise<AIResult> {
+async function runCloudflare(request: AIRequest, requestedModels?: string[], disabledModels = new Set<string>()): Promise<AIResult> {
   const configuredModels = requestedModels?.length ? requestedModels : modelList(env.CLOUDFLARE_AI_MODEL, TEXT_MODELS);
   const models = requestedModels?.length ? configuredModels : request.pageImage ? [...VISION_MODELS, ...configuredModels] : configuredModels;
   let lastError: unknown;
 
-  for (const model of [...new Set(models)]) {
+  for (const model of [...new Set(models)].filter((candidate) => !disabledModels.has(candidate))) {
     const cooldownKey = `cloudflare:${model}`;
     if (isCoolingDown(cooldownKey)) continue;
     try {
@@ -108,13 +111,13 @@ async function runCloudflare(request: AIRequest, requestedModels?: string[]): Pr
   throw lastError || new Error('CLOUDFLARE_UNAVAILABLE');
 }
 
-async function runGemini(request: AIRequest, requestedModels?: string[]): Promise<AIResult> {
+async function runGemini(request: AIRequest, requestedModels?: string[], disabledModels = new Set<string>()): Promise<AIResult> {
   const configured = env.GEMINI_MODELS || env.GEMINI_MODEL;
   const models = requestedModels?.length ? requestedModels : [...new Set([...modelList(configured, []), ...GEMINI_MODELS])];
   const providerDeadline = Date.now() + 10_000;
   let lastError: unknown;
 
-  for (const model of models) {
+  for (const model of models.filter((candidate) => !disabledModels.has(candidate))) {
     const cooldownKey = `gemini:${model}`;
     if (isCoolingDown(cooldownKey)) continue;
     try {

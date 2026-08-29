@@ -134,3 +134,23 @@ export async function recordAIUsage(input: {
     createdAt: Date.now(),
   });
 }
+
+export async function recordAIRequestEvent(input: {
+  userId: string;
+  provider: string;
+  model: string;
+  status: 'success' | 'fallback' | 'error';
+  errorCode?: string;
+  latencyMs: number;
+  usageUnits: number;
+}) {
+  await ensureDatabaseSchema();
+  await env.DB.prepare(`
+    INSERT INTO ai_request_events
+      (id, user_id, provider, model, status, error_code, latency_ms, usage_units, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    crypto.randomUUID(), input.userId, input.provider, input.model, input.status,
+    input.errorCode || null, Math.max(0, Math.round(input.latencyMs)), Math.max(0, Math.round(input.usageUnits)), Date.now(),
+  ).run();
+}

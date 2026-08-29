@@ -1,0 +1,20 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "ai-pdf-study-assistant-staging",
+  "pages_build_output_dir": "../dist/pages",
+  "compatibility_date": "2026-05-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "ai": {
+    "binding": "AI"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "study-assistant-staging",
+      "database_id": "f5da969a-1863-45e2-bfaa-2d089bbbfb82"
+    }
+  ],
+  "vars": {
+    "ADMIN_EMAILS": "shihabmuhtasim.cs@gmail.com"
+  }
+}

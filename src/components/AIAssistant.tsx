@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Bot, Check, Copy, Image as ImageIcon, KeyRound, Loader2, Lock, Plus, Send, Sparkles } from 'lucide-react';
+import { Bot, Check, ChevronDown, Copy, Crown, Image as ImageIcon, KeyRound, Loader2, Lock, Plus, Send, Sparkles } from 'lucide-react';
 import { AccountIdentity, AccountSummary, AIInteraction, AIModelPreference, CustomAIConnection } from '../types';
 import { AIRequestError, askAIAboutPage } from '../services/ai';
 import { askCustomAI } from '../services/customAI';
@@ -93,6 +93,7 @@ export function AIAssistant({
   const [connections, setConnections] = useState<CustomAIConnection[]>([]);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [connectionsOpen, setConnectionsOpen] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [insertModalState, setInsertModalState] = useState({ isOpen: false, promptQuestion: '', aiResponse: '' });
   const hasProAccess = Boolean(account && 'plan' in account && account.plan === 'pro');
   const remainingPercent = account && 'aiRemainingPercent' in account ? account.aiRemainingPercent : 0;
@@ -229,6 +230,14 @@ export function AIAssistant({
   };
 
   const activeConnection = connections.find((connection) => connection.id === selectedConnectionId) || null;
+  const activeModelLabel = modelPreference === 'custom'
+    ? activeConnection?.name || 'Custom model'
+    : modelOptions.find((option) => option.value === modelPreference)?.label || 'Auto · Best available';
+
+  const chooseModel = (value: AIModelPreference) => {
+    setModelPreference(value);
+    setModelMenuOpen(false);
+  };
 
   const saveConnection = async (connection: CustomAIConnection) => {
     const saved = await saveEncryptedConnection(connection);
@@ -304,23 +313,20 @@ export function AIAssistant({
         {isDocumentContextLoading && <p className="mb-2 flex items-center gap-2 text-xs text-slate-500"><Loader2 size={13} className="animate-spin text-indigo-600" />Indexing the whole document…</p>}
         {error && <p role="alert" className="mb-2 text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <label className="flex items-center gap-2 text-xs text-slate-600">
+          <div className="relative flex items-center gap-2 text-xs text-slate-600">
             <Bot size={14} className="text-indigo-600" />
-            <span className="sr-only">AI model</span>
-            <select value={modelPreference === 'custom' && activeConnection ? `custom:${activeConnection.id}` : modelPreference} onChange={(event) => {
-              const value = event.target.value;
-              if (value.startsWith('custom:')) {
-                setSelectedConnectionId(value.slice(7));
-                setModelPreference('custom');
-              } else setModelPreference(value as AIModelPreference);
-            }} className="max-w-48 bg-white border border-slate-200 rounded-md px-2 py-1.5 text-xs text-slate-700 focus:border-indigo-500">
-              {modelOptions
-                .filter((option) => hasProAccess ? option.value !== 'basic' : option.value === 'basic')
-                .map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              {hasProAccess && connections.map((connection) => <option key={connection.id} value={`custom:${connection.id}`}>{connection.name}</option>)}
-            </select>
-            <button type="button" onClick={() => hasProAccess ? setConnectionsOpen(true) : onUpgrade()} className="p-1.5 rounded-md border border-slate-200 text-slate-500 hover:text-indigo-700 hover:border-indigo-300" title={hasProAccess ? 'Manage API keys' : 'Custom models require Pro'} aria-label={hasProAccess ? 'Manage API keys' : 'Upgrade for custom models'}>{hasProAccess ? <KeyRound size={14} /> : <Lock size={14} />}</button>
-          </label>
+            <button type="button" onClick={() => setModelMenuOpen((open) => !open)} className="flex max-w-52 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:border-indigo-300" aria-haspopup="menu" aria-expanded={modelMenuOpen}>
+              <span className="truncate">{hasProAccess ? activeModelLabel : 'Study Basic'}</span><ChevronDown size={13} className="shrink-0" />
+            </button>
+            {modelMenuOpen && <div className="absolute bottom-10 left-5 z-40 w-64 overflow-hidden rounded-lg border border-slate-200 bg-white p-1.5 shadow-xl" role="menu">
+              {!hasProAccess && <><button type="button" onClick={() => chooseModel('basic')} className="flex w-full items-center justify-between rounded-md bg-indigo-50 px-3 py-2 text-left text-xs font-semibold text-indigo-800"><span className="flex items-center gap-2"><Check size={14} />Study Basic</span><span className="text-[10px] font-medium text-indigo-600">Included</span></button><div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase text-slate-400">Premium models</div></>}
+              {modelOptions.filter((option) => option.value !== 'basic').map((option) => hasProAccess
+                ? <button key={option.value} type="button" onClick={() => chooseModel(option.value)} className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-xs hover:bg-slate-50 ${modelPreference === option.value ? 'font-semibold text-indigo-700' : 'text-slate-700'}`} role="menuitem"><span>{option.label}</span>{modelPreference === option.value && <Check size={14} />}</button>
+                : <button key={option.value} type="button" onClick={() => { setModelMenuOpen(false); onUpgrade(); }} className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-xs text-slate-500 hover:bg-indigo-50 hover:text-indigo-700" role="menuitem"><span className="flex items-center gap-2"><Crown size={13} />{option.label}</span><Lock size={13} /></button>)}
+              {hasProAccess && connections.length > 0 && <><div className="mx-2 my-1 h-px bg-slate-100" /><div className="px-3 py-1 text-[10px] font-semibold uppercase text-slate-400">Your models</div>{connections.map((connection) => <button key={connection.id} type="button" onClick={() => { setSelectedConnectionId(connection.id); chooseModel('custom'); }} className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-xs hover:bg-slate-50 ${modelPreference === 'custom' && activeConnection?.id === connection.id ? 'font-semibold text-indigo-700' : 'text-slate-700'}`}><span className="truncate">{connection.name}</span>{modelPreference === 'custom' && activeConnection?.id === connection.id && <Check size={14} />}</button>)}</>}
+            </div>}
+            <button type="button" onClick={() => hasProAccess ? setConnectionsOpen(true) : onUpgrade()} className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${hasProAccess ? 'border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-700' : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-indigo-300 hover:text-indigo-700'}`} title={hasProAccess ? 'Manage Custom API connections' : 'Custom API requires Premium'} aria-label={hasProAccess ? 'Manage Custom API connections' : 'Upgrade for Custom API'}><KeyRound size={14} /><span>Custom API</span>{!hasProAccess && <Lock size={12} />}</button>
+          </div>
           {hasProAccess ? <div className="flex items-center gap-3"><span className="text-xs font-semibold text-indigo-700">{remainingPercent}% left</span><label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer"><input type="checkbox" checked={allowFallback} onChange={(event) => setAllowFallback(event.target.checked)} className="accent-indigo-600" />Auto fallback</label></div> : <button type="button" onClick={onUpgrade} className="inline-flex items-center gap-1.5 rounded-md bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"><Lock size={12} />{remainingPercent}% AI usage left · Upgrade</button>}
         </div>
         <div className="flex items-center justify-between gap-2 mb-2">

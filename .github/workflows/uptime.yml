@@ -1,0 +1,14 @@
+name: Production uptime
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check production health
+        run: curl --fail --show-error --silent --retry 2 --max-time 20 https://ai-pdf-study-assistant.pages.dev/api/health

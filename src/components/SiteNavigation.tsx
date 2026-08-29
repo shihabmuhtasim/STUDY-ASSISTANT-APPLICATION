@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BookOpen, ChevronDown, CircleUserRound, LogIn, LogOut, Mail, Menu, Sparkles, Tag, X } from 'lucide-react';
+import { BookOpen, ChevronDown, CircleUserRound, LogIn, LogOut, Mail, Menu, ShieldCheck, Sparkles, Tag, X } from 'lucide-react';
 import type { AccountIdentity, AccountSummary } from '../types';
 
 interface SiteNavigationProps {
@@ -19,6 +19,7 @@ export function SiteNavigation({ account, onLibrary, onPlans, onContact, onAuth,
     : account && 'plan' in account && account.plan === 'pro'
       ? 'Pro'
       : 'Free';
+  const isAdmin = Boolean(account && 'role' in account && account.role === 'admin');
 
   const run = (action: () => void) => {
     setMenuOpen(false);
@@ -60,6 +61,7 @@ export function SiteNavigation({ account, onLibrary, onPlans, onContact, onAuth,
                     <span className={`rounded-full px-2 py-1 font-semibold ${accessLabel === 'Free' ? 'bg-slate-100 text-slate-700' : 'bg-emerald-50 text-emerald-700'}`}>{accessLabel}</span>
                   </div>
                   {account && 'aiRemainingPercent' in account && <div className="px-2 py-1.5 text-xs text-slate-500"><div className="flex items-center justify-between"><span>Monthly AI usage</span><span className="font-semibold text-slate-700">{account.aiRemainingPercent}% left</span></div><div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-indigo-600" style={{ width: `${account.aiRemainingPercent}%` }} /></div></div>}
+                  {isAdmin && <a href="/admin" className="mt-2 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium text-indigo-700 hover:bg-indigo-50"><ShieldCheck size={16} />Admin workspace</a>}
                   <button type="button" onClick={() => { setAccountOpen(false); onSignOut(); }} className="mt-2 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium text-red-700 hover:bg-red-50"><LogOut size={16} />Sign out</button>
                 </div>
               )}
@@ -77,7 +79,7 @@ export function SiteNavigation({ account, onLibrary, onPlans, onContact, onAuth,
         <button type="button" onClick={() => run(onPlans)} className="block w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">Plans</button>
         <button type="button" onClick={() => run(onContact)} className="block w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">Contact</button>
         <div className="my-2 h-px bg-slate-200" />
-        {account ? <><p className="px-3 pt-2 text-xs font-semibold uppercase text-slate-500">{accessLabel} account</p><p className="truncate px-3 py-1 text-sm font-medium text-slate-900">{account.displayName}</p><p className="truncate px-3 pb-2 text-xs text-slate-500">{account.email}</p><button type="button" onClick={() => run(onSignOut)} className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm font-medium text-red-700 hover:bg-red-50"><LogOut size={16} />Sign out</button></> : <button type="button" onClick={() => run(onAuth)} className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white"><Sparkles size={16} />Sign in or create account</button>}
+        {account ? <><p className="px-3 pt-2 text-xs font-semibold uppercase text-slate-500">{accessLabel} account</p><p className="truncate px-3 py-1 text-sm font-medium text-slate-900">{account.displayName}</p><p className="truncate px-3 pb-2 text-xs text-slate-500">{account.email}</p>{isAdmin && <a href="/admin" className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm font-medium text-indigo-700 hover:bg-indigo-50"><ShieldCheck size={16} />Admin workspace</a>}<button type="button" onClick={() => run(onSignOut)} className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm font-medium text-red-700 hover:bg-red-50"><LogOut size={16} />Sign out</button></> : <button type="button" onClick={() => run(onAuth)} className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white"><Sparkles size={16} />Sign in or create account</button>}
       </nav>}
     </header>
   );
