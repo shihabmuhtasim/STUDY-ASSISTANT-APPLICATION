@@ -16,7 +16,7 @@ export async function askAIAboutPage(input: {
   history: AIInteraction[];
   modelPreference: AIModelPreference;
   allowFallback: boolean;
-}): Promise<{ response: string; remaining?: number; provider?: AIInteraction['provider']; model?: string; requestedModel?: AIModelPreference; fallbackUsed?: boolean }> {
+}): Promise<{ response: string; remaining?: number; remainingPercent?: number; usageCharged?: number; provider?: AIInteraction['provider']; model?: string; requestedModel?: AIModelPreference; fallbackUsed?: boolean }> {
   const user = firebaseAuth.currentUser;
   if (!user) throw new AIRequestError('Sign in again to use the AI assistant.', 'AUTH_REQUIRED', 401);
   const response = await fetch('/api/ai/chat', {
@@ -42,6 +42,8 @@ export async function askAIAboutPage(input: {
     error?: string;
     code?: string;
     remaining?: number;
+    remainingPercent?: number;
+    usageCharged?: number;
     provider?: AIInteraction['provider'];
     model?: string;
     requestedModel?: AIModelPreference;
@@ -51,5 +53,5 @@ export async function askAIAboutPage(input: {
   if (!response.ok || !data.response) {
     throw new AIRequestError(data.error || 'The AI assistant could not answer right now.', data.code, response.status);
   }
-  return { response: data.response, remaining: data.remaining, provider: data.provider, model: data.model, requestedModel: data.requestedModel, fallbackUsed: data.fallbackUsed };
+  return { response: data.response, remaining: data.remaining, remainingPercent: data.remainingPercent, usageCharged: data.usageCharged, provider: data.provider, model: data.model, requestedModel: data.requestedModel, fallbackUsed: data.fallbackUsed };
 }

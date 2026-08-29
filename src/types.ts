@@ -65,7 +65,7 @@ export interface AIInteraction {
   fallbackUsed?: boolean;
 }
 
-export type AIModelPreference = 'auto' | 'gemini-flash' | 'gemini-flash-lite' | 'qwen' | 'llama' | 'gemma' | 'glm' | 'nemotron' | 'custom';
+export type AIModelPreference = 'auto' | 'basic' | 'gemini-flash' | 'gemini-flash-lite' | 'qwen' | 'llama' | 'gemma' | 'glm' | 'nemotron' | 'custom';
 
 export type CustomAIService = 'openai' | 'openrouter' | 'nvidia' | 'groq' | 'together' | 'gemini' | 'anthropic' | 'custom';
 export type CustomAIProvider = 'openai-compatible' | 'gemini' | 'anthropic';
@@ -94,4 +94,6 @@ export interface AccountSummary extends AccountIdentity {
   aiUsage: number;
   aiLimit: number;
   aiRemaining: number;
+  aiRemainingPercent: number;
+  aiResetAt: number;
 }

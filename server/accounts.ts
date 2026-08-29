@@ -3,11 +3,14 @@ import { eq } from 'drizzle-orm';
 import { getDb } from '../db';
 import { ensureDatabaseSchema } from '../db/init';
 import { aiUsageEvents, users } from '../db/schema';
+import {
+  ADMIN_MONTHLY_AI_LIMIT,
+  FREE_MONTHLY_AI_LIMIT,
+  PRO_MONTHLY_AI_LIMIT,
+  nextMonthlyReset,
+  remainingPercentage,
+} from './aiUsage';
 import type { VerifiedFirebaseUser } from './firebaseUser';
-
-export const FREE_MONTHLY_AI_LIMIT = 30;
-export const PRO_MONTHLY_AI_LIMIT = 1000;
-export const ADMIN_MONTHLY_AI_LIMIT = 1_000_000;
 
 function usagePeriod(date = new Date()) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -71,34 +74,50 @@ export async function getAccountSummary(user: VerifiedFirebaseUser) {
     aiUsage: used,
     aiLimit: limit,
     aiRemaining: Math.max(0, limit - used),
+    aiRemainingPercent: remainingPercentage(limit, Math.max(0, limit - used)),
+    aiResetAt: nextMonthlyReset(),
   };
 }
 
-export async function consumeAIAllowance(user: VerifiedFirebaseUser) {
+export async function reserveAIAllowance(user: VerifiedFirebaseUser, units: number) {
   const account = await getAccountSummary(user);
+  const reservedUnits = Math.max(1, Math.min(Math.ceil(units), account.aiRemaining));
   const result = await env.DB.prepare(`
     INSERT INTO ai_usage_counters (user_id, period, used, updated_at)
-    VALUES (?, ?, 1, ?)
+    VALUES (?, ?, ?, ?)
     ON CONFLICT(user_id, period) DO UPDATE SET
-      used = used + 1,
+      used = used + excluded.used,
       updated_at = excluded.updated_at
-    WHERE used < ?
+    WHERE used + excluded.used <= ?
     RETURNING used
-  `).bind(user.uid, usagePeriod(), Date.now(), account.aiLimit).first<{ used: number }>();
+  `).bind(user.uid, usagePeriod(), reservedUnits, Date.now(), account.aiLimit).first<{ used: number }>();
   const used = Number(result?.used);
   return {
     allowed: Number.isFinite(used),
     account,
+    reservedUnits,
     remaining: Number.isFinite(used) ? Math.max(0, account.aiLimit - used) : 0,
   };
 }
 
-export async function releaseAIAllowance(userId: string) {
+export async function settleAIAllowance(userId: string, reservedUnits: number, actualUnits: number, limit: number) {
+  const delta = Math.ceil(actualUnits) - Math.ceil(reservedUnits);
+  if (delta === 0) return currentUsage(userId);
+  const result = await env.DB.prepare(`
+    UPDATE ai_usage_counters
+    SET used = MIN(?, MAX(0, used + ?)), updated_at = ?
+    WHERE user_id = ? AND period = ?
+    RETURNING used
+  `).bind(limit, delta, Date.now(), userId, usagePeriod()).first<{ used: number }>();
+  return Number(result?.used) || 0;
+}
+
+export async function releaseAIAllowance(userId: string, reservedUnits: number) {
   await env.DB.prepare(`
     UPDATE ai_usage_counters
-    SET used = CASE WHEN used > 0 THEN used - 1 ELSE 0 END, updated_at = ?
+    SET used = MAX(0, used - ?), updated_at = ?
     WHERE user_id = ? AND period = ?
-  `).bind(Date.now(), userId, usagePeriod()).run();
+  `).bind(Math.max(1, Math.ceil(reservedUnits)), Date.now(), userId, usagePeriod()).run();
 }
 
 export async function recordAIUsage(input: {

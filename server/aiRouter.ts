@@ -1,7 +1,8 @@
 import { env } from 'cloudflare:workers';
+import { FREE_AI_MODEL } from './aiUsage';
 
 export type AIHistoryItem = { prompt: string; response: string };
-export type AIModelPreference = 'auto' | 'gemini-flash' | 'gemini-flash-lite' | 'qwen' | 'llama' | 'gemma' | 'glm' | 'nemotron';
+export type AIModelPreference = 'auto' | 'basic' | 'gemini-flash' | 'gemini-flash-lite' | 'qwen' | 'llama' | 'gemma' | 'glm' | 'nemotron';
 export type AIRequest = { prompt: string; pageNumber: number; pageText?: string; documentText?: string; pageImage?: string; history?: AIHistoryItem[]; modelPreference?: AIModelPreference; allowFallback?: boolean };
 type AIResult = { text: string; provider: 'cloudflare' | 'gemini' | 'local'; model: string; requestedModel?: AIModelPreference; fallbackUsed?: boolean };
 
@@ -23,6 +24,7 @@ const VISION_MODELS = [
 const modelCooldowns = new Map<string, number>();
 const CAPACITY_COOLDOWN_MS = 90_000;
 const MODEL_TARGETS: Record<Exclude<AIModelPreference, 'auto'>, { provider: 'gemini' | 'cloudflare'; model: string }> = {
+  basic: { provider: 'cloudflare', model: FREE_AI_MODEL },
   'gemini-flash': { provider: 'gemini', model: GEMINI_MODELS[0] },
   'gemini-flash-lite': { provider: 'gemini', model: GEMINI_MODELS[1] },
   qwen: { provider: 'cloudflare', model: TEXT_MODELS[0] },

@@ -18,7 +18,7 @@ interface AIAssistantProps {
   isDocumentContextLoading: boolean;
   history: AIInteraction[];
   account: AccountSummary | AccountIdentity | null;
-  onRemainingChange: (remaining: number) => void;
+  onRemainingChange: (remaining: number, remainingPercent?: number) => void;
   onUpgrade: () => void;
   onAddInteraction: (interaction: AIInteraction) => void;
   onInsertToNotes: (text: string, questionHeader?: string) => void;
@@ -26,6 +26,7 @@ interface AIAssistantProps {
 
 const quickPrompts = ['Summarize this page', 'Explain the key ideas', 'Create 3 quiz questions'];
 const modelOptions: Array<{ value: AIModelPreference; label: string }> = [
+  { value: 'basic', label: 'Study Basic' },
   { value: 'auto', label: 'Auto · Best available' },
   { value: 'gemini-flash', label: 'Gemini 3.6 Flash' },
   { value: 'gemini-flash-lite', label: 'Gemini 3.5 Flash-Lite' },
@@ -55,6 +56,7 @@ function isCustomAIConnection(item: unknown): item is CustomAIConnection {
 }
 
 function displayModel(model: string) {
+  if (model.includes('llama-3.2-1b')) return 'Study Basic';
   if (model === 'gemini-3.6-flash') return 'Gemini 3.6 Flash';
   if (model === 'gemini-3.5-flash-lite') return 'Gemini 3.5 Flash-Lite';
   if (model.includes('qwen')) return 'Qwen 3';
@@ -93,7 +95,7 @@ export function AIAssistant({
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [insertModalState, setInsertModalState] = useState({ isOpen: false, promptQuestion: '', aiResponse: '' });
   const hasProAccess = Boolean(account && 'plan' in account && account.plan === 'pro');
-  const remaining = account && 'aiRemaining' in account ? account.aiRemaining : 0;
+  const remainingPercent = account && 'aiRemainingPercent' in account ? account.aiRemainingPercent : 0;
 
   useEffect(() => {
     const savedModel = window.localStorage.getItem('study-assistant-model') as AIModelPreference | null;
@@ -127,7 +129,8 @@ export function AIAssistant({
             setSelectedConnectionId(saved[0]?.id || null);
             return;
           }
-          if (modelOptions.some((option) => option.value === cloud.modelPreference) || cloud.modelPreference === 'custom') setModelPreference(cloud.modelPreference);
+          if (cloud.modelPreference === 'basic') setModelPreference('auto');
+          else if (modelOptions.some((option) => option.value === cloud.modelPreference) || cloud.modelPreference === 'custom') setModelPreference(cloud.modelPreference);
           setAllowFallback(cloud.allowFallback !== false);
           setSelectedConnectionId(saved.some((connection) => connection.id === cloud.selectedConnectionId) ? cloud.selectedConnectionId : saved[0]?.id || null);
         })
@@ -137,7 +140,7 @@ export function AIAssistant({
       setConnections([]);
       setSelectedConnectionId(null);
       setConnectionsOpen(false);
-      setModelPreference('glm');
+      setModelPreference('basic');
       setAllowFallback(false);
       setPreferencesLoaded(true);
     }
@@ -149,7 +152,7 @@ export function AIAssistant({
     window.localStorage.setItem('study-assistant-fallback', String(allowFallback));
     if (selectedConnectionId) window.sessionStorage.setItem(SELECTED_CONNECTION_SESSION_KEY, selectedConnectionId);
     else window.sessionStorage.removeItem(SELECTED_CONNECTION_SESSION_KEY);
-    if (account) saveCloudPreferences(account.userId, { modelPreference: hasProAccess ? modelPreference : 'glm', allowFallback: hasProAccess ? allowFallback : false, selectedConnectionId: hasProAccess ? selectedConnectionId : null }).catch((saveError) => console.error('Failed to save cloud AI preferences', saveError));
+    if (account) saveCloudPreferences(account.userId, { modelPreference: hasProAccess ? modelPreference : 'basic', allowFallback: hasProAccess ? allowFallback : false, selectedConnectionId: hasProAccess ? selectedConnectionId : null }).catch((saveError) => console.error('Failed to save cloud AI preferences', saveError));
   }, [modelPreference, allowFallback, selectedConnectionId, preferencesLoaded, account?.userId, hasProAccess]);
 
   useEffect(() => {
@@ -194,7 +197,7 @@ export function AIAssistant({
       } else {
         result = await askAIAboutPage({ ...request, modelPreference, allowFallback });
       }
-      if (typeof result.remaining === 'number') onRemainingChange(result.remaining);
+      if (typeof result.remaining === 'number') onRemainingChange(result.remaining, result.remainingPercent);
       onAddInteraction({
         id: uuidv4(),
         prompt: text.trim(),
@@ -311,18 +314,14 @@ export function AIAssistant({
                 setModelPreference('custom');
               } else setModelPreference(value as AIModelPreference);
             }} className="max-w-48 bg-white border border-slate-200 rounded-md px-2 py-1.5 text-xs text-slate-700 focus:border-indigo-500">
-              {modelOptions.map((option) => {
-                const isBasic = option.value === 'glm';
-                return <option key={option.value} value={option.value} disabled={!hasProAccess && !isBasic}>{isBasic && !hasProAccess ? 'Study Basic' : `${option.label}${hasProAccess ? '' : ' · Pro'}`}</option>;
-              })}
+              {modelOptions
+                .filter((option) => hasProAccess ? option.value !== 'basic' : option.value === 'basic')
+                .map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               {hasProAccess && connections.map((connection) => <option key={connection.id} value={`custom:${connection.id}`}>{connection.name}</option>)}
             </select>
             <button type="button" onClick={() => hasProAccess ? setConnectionsOpen(true) : onUpgrade()} className="p-1.5 rounded-md border border-slate-200 text-slate-500 hover:text-indigo-700 hover:border-indigo-300" title={hasProAccess ? 'Manage API keys' : 'Custom models require Pro'} aria-label={hasProAccess ? 'Manage API keys' : 'Upgrade for custom models'}>{hasProAccess ? <KeyRound size={14} /> : <Lock size={14} />}</button>
           </label>
-          {hasProAccess ? <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-            <input type="checkbox" checked={allowFallback} onChange={(event) => setAllowFallback(event.target.checked)} className="accent-indigo-600" />
-            Auto fallback
-          </label> : <button type="button" onClick={onUpgrade} className="inline-flex items-center gap-1.5 rounded-md bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"><Lock size={12} />{remaining} answers left · Upgrade</button>}
+          {hasProAccess ? <div className="flex items-center gap-3"><span className="text-xs font-semibold text-indigo-700">{remainingPercent}% left</span><label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer"><input type="checkbox" checked={allowFallback} onChange={(event) => setAllowFallback(event.target.checked)} className="accent-indigo-600" />Auto fallback</label></div> : <button type="button" onClick={onUpgrade} className="inline-flex items-center gap-1.5 rounded-md bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"><Lock size={12} />{remainingPercent}% AI usage left · Upgrade</button>}
         </div>
         <div className="flex items-center justify-between gap-2 mb-2">
           <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">

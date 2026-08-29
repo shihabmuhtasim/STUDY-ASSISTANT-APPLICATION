@@ -59,7 +59,7 @@ export function SiteNavigation({ account, onLibrary, onPlans, onContact, onAuth,
                     <span>Access</span>
                     <span className={`rounded-full px-2 py-1 font-semibold ${accessLabel === 'Free' ? 'bg-slate-100 text-slate-700' : 'bg-emerald-50 text-emerald-700'}`}>{accessLabel}</span>
                   </div>
-                  {account && 'aiRemaining' in account && <div className="flex items-center justify-between px-2 py-1 text-xs text-slate-500"><span>AI answers left</span><span className="font-semibold text-slate-700">{account.aiRemaining.toLocaleString()}</span></div>}
+                  {account && 'aiRemainingPercent' in account && <div className="px-2 py-1.5 text-xs text-slate-500"><div className="flex items-center justify-between"><span>Monthly AI usage</span><span className="font-semibold text-slate-700">{account.aiRemainingPercent}% left</span></div><div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-indigo-600" style={{ width: `${account.aiRemainingPercent}%` }} /></div></div>}
                   <button type="button" onClick={() => { setAccountOpen(false); onSignOut(); }} className="mt-2 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium text-red-700 hover:bg-red-50"><LogOut size={16} />Sign out</button>
                 </div>
               )}

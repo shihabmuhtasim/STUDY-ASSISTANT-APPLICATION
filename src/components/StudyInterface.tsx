@@ -180,12 +180,13 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     }
   };
 
-  const handleRemainingChange = (remaining: number) => {
+  const handleRemainingChange = (remaining: number, remainingPercent?: number) => {
     if (!account || !('aiRemaining' in account)) return;
     onAccountChange({
       ...account,
       aiRemaining: remaining,
       aiUsage: Math.max(0, account.aiLimit - remaining),
+      aiRemainingPercent: remainingPercent ?? Math.max(0, Math.min(100, Math.round(remaining / account.aiLimit * 100))),
     });
   };
 
