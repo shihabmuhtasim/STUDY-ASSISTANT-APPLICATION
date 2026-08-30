@@ -106,7 +106,10 @@ export function AIAssistant({
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const assistantRef = useRef<HTMLDivElement>(null);
+  const modelTriggerRef = useRef<HTMLButtonElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
+  const [modelMenuMaxHeight, setModelMenuMaxHeight] = useState(288);
   const [insertModalState, setInsertModalState] = useState({ isOpen: false, promptQuestion: '', aiResponse: '' });
   const hasProAccess = Boolean(account && 'plan' in account && account.plan === 'pro');
   const remainingPercent = account && 'aiRemainingPercent' in account ? account.aiRemainingPercent : 0;
@@ -179,9 +182,26 @@ export function AIAssistant({
 
   useEffect(() => {
     if (!modelMenuOpen) return;
-    window.requestAnimationFrame(() => {
+    const fitMenuInsideAssistant = () => {
+      const assistantBounds = assistantRef.current?.getBoundingClientRect();
+      const triggerBounds = modelTriggerRef.current?.getBoundingClientRect();
+      if (!assistantBounds || !triggerBounds) return;
+      const availableHeight = Math.floor(triggerBounds.top - assistantBounds.top - 16);
+      setModelMenuMaxHeight(Math.max(64, Math.min(420, availableHeight)));
+    };
+    const frame = window.requestAnimationFrame(() => {
+      fitMenuInsideAssistant();
       if (modelMenuRef.current) modelMenuRef.current.scrollTop = 0;
     });
+    const observer = new ResizeObserver(fitMenuInsideAssistant);
+    if (assistantRef.current) observer.observe(assistantRef.current);
+    if (modelTriggerRef.current) observer.observe(modelTriggerRef.current);
+    window.addEventListener('resize', fitMenuInsideAssistant);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener('resize', fitMenuInsideAssistant);
+    };
   }, [modelMenuOpen]);
 
   const handleAsk = async (text: string) => {
@@ -294,7 +314,7 @@ export function AIAssistant({
   };
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
+    <div ref={assistantRef} className="flex flex-col h-full bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
       <div className="p-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <Sparkles size={18} className="text-indigo-600 shrink-0" />
@@ -363,10 +383,10 @@ export function AIAssistant({
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div className="relative flex items-center gap-2 text-xs text-slate-600">
             <Bot size={14} className="text-indigo-600" />
-            <button type="button" onClick={() => setModelMenuOpen((open) => !open)} className="flex max-w-52 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:border-indigo-300" aria-haspopup="menu" aria-expanded={modelMenuOpen}>
+            <button ref={modelTriggerRef} type="button" onClick={() => setModelMenuOpen((open) => !open)} className="flex max-w-52 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:border-indigo-300" aria-haspopup="menu" aria-expanded={modelMenuOpen}>
               <span className="truncate">{hasProAccess ? activeModelLabel : 'Study Basic'}</span><ChevronDown size={13} className="shrink-0" />
             </button>
-            {modelMenuOpen && <div ref={modelMenuRef} className="custom-scrollbar absolute bottom-10 left-5 z-40 max-h-72 w-64 overflow-x-hidden overflow-y-auto overscroll-contain rounded-lg border border-slate-200 bg-white p-1.5 shadow-xl" role="menu">
+            {modelMenuOpen && <div ref={modelMenuRef} style={{ maxHeight: modelMenuMaxHeight }} className="custom-scrollbar absolute bottom-10 left-5 z-40 w-64 overflow-x-hidden overflow-y-auto overscroll-contain rounded-lg border border-slate-200 bg-white p-1.5 shadow-xl" role="menu">
               {!hasProAccess && <><button type="button" onClick={() => chooseModel('basic')} className="flex w-full items-center justify-between rounded-md bg-indigo-50 px-3 py-2 text-left text-xs font-semibold text-indigo-800"><span className="flex items-center gap-2"><Check size={14} />Study Basic</span><span className="text-[10px] font-medium text-indigo-600">Included</span></button><div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase text-slate-400">Premium models</div></>}
               {modelOptions.filter((option) => option.value !== 'basic').map((option) => hasProAccess
                 ? <button key={option.value} type="button" onClick={() => chooseModel(option.value)} className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-xs hover:bg-slate-50 ${modelPreference === option.value ? 'font-semibold text-indigo-700' : 'text-slate-700'}`} role="menuitem"><span>{option.label}</span>{modelPreference === option.value && <Check size={14} />}</button>
