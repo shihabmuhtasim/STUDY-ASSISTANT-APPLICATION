@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Bot, Check, ChevronDown, Copy, Crown, Image as ImageIcon, KeyRound, Loader2, Lock, Plus, Quote, Send, Sparkles } from 'lucide-react';
 import { AccountIdentity, AccountSummary, AIInteraction, AIModelPreference, AISourceReference, CustomAIConnection } from '../types';
 import { AIRequestError, askAIAboutPage } from '../services/ai';
@@ -106,6 +106,7 @@ export function AIAssistant({
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const modelMenuRef = useRef<HTMLDivElement>(null);
   const [insertModalState, setInsertModalState] = useState({ isOpen: false, promptQuestion: '', aiResponse: '' });
   const hasProAccess = Boolean(account && 'plan' in account && account.plan === 'pro');
   const remainingPercent = account && 'aiRemainingPercent' in account ? account.aiRemainingPercent : 0;
@@ -175,6 +176,13 @@ export function AIAssistant({
     setIncludeImage(scope === 'page' && hasProAccess && !pageText.trim());
     setError(null);
   }, [pageNumber, pageText, hasProAccess, scope]);
+
+  useEffect(() => {
+    if (!modelMenuOpen) return;
+    window.requestAnimationFrame(() => {
+      if (modelMenuRef.current) modelMenuRef.current.scrollTop = 0;
+    });
+  }, [modelMenuOpen]);
 
   const handleAsk = async (text: string) => {
     if (!text.trim() || isLoading || isDocumentContextLoading) return;
@@ -358,7 +366,7 @@ export function AIAssistant({
             <button type="button" onClick={() => setModelMenuOpen((open) => !open)} className="flex max-w-52 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:border-indigo-300" aria-haspopup="menu" aria-expanded={modelMenuOpen}>
               <span className="truncate">{hasProAccess ? activeModelLabel : 'Study Basic'}</span><ChevronDown size={13} className="shrink-0" />
             </button>
-            {modelMenuOpen && <div className="absolute bottom-10 left-5 z-40 w-64 overflow-hidden rounded-lg border border-slate-200 bg-white p-1.5 shadow-xl" role="menu">
+            {modelMenuOpen && <div ref={modelMenuRef} className="custom-scrollbar absolute bottom-10 left-5 z-40 max-h-72 w-64 overflow-x-hidden overflow-y-auto overscroll-contain rounded-lg border border-slate-200 bg-white p-1.5 shadow-xl" role="menu">
               {!hasProAccess && <><button type="button" onClick={() => chooseModel('basic')} className="flex w-full items-center justify-between rounded-md bg-indigo-50 px-3 py-2 text-left text-xs font-semibold text-indigo-800"><span className="flex items-center gap-2"><Check size={14} />Study Basic</span><span className="text-[10px] font-medium text-indigo-600">Included</span></button><div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase text-slate-400">Premium models</div></>}
               {modelOptions.filter((option) => option.value !== 'basic').map((option) => hasProAccess
                 ? <button key={option.value} type="button" onClick={() => chooseModel(option.value)} className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-xs hover:bg-slate-50 ${modelPreference === option.value ? 'font-semibold text-indigo-700' : 'text-slate-700'}`} role="menuitem"><span>{option.label}</span>{modelPreference === option.value && <Check size={14} />}</button>
