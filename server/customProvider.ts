@@ -1,6 +1,6 @@
 import type { AIInteraction, CustomAIConnection } from '../src/types';
 
-const SYSTEM_PROMPT = `You are a careful, capable study assistant working from a supplied document. Focus first on the current page and explain it in the context of the whole document. Use other pages when the question requires background, comparison, or information not repeated on the current page. If the document does not contain the answer, say so clearly. Preserve important names, numbers, formulas, and qualifications. Explain concepts in plain language, organize longer answers with short headings and bullets, and cite page numbers when referring to evidence. Match the student's requested language.`;
+const SYSTEM_PROMPT = `You are a careful, capable study assistant working from a supplied document. Follow the study scope stated in the user context: either prioritize the current page or synthesize the whole document. If the document does not contain the answer, say so clearly. Preserve important names, numbers, formulas, and qualifications. Explain concepts in plain language, organize longer answers with short headings and bullets, and cite page numbers when referring to evidence. Match the student's requested language.`;
 const NVIDIA_CHAT_ENDPOINT = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
 export interface CustomProviderInput {
@@ -9,6 +9,7 @@ export interface CustomProviderInput {
   pageNumber: number;
   pageText: string;
   documentContext: string;
+  scope?: 'page' | 'document';
   pageImage?: string;
   history: AIInteraction[];
   testMode?: boolean;
@@ -18,7 +19,10 @@ function buildContext(input: CustomProviderInput) {
   const history = input.history.slice(-3).map((item) => `Student: ${item.prompt}\nAssistant: ${item.response}`).join('\n\n');
   const page = input.pageText.trim() ? input.pageText.slice(0, 12_000) : '[No selectable text was extracted from this page. Use the page image if supplied.]';
   const document = input.documentContext.trim() ? input.documentContext.slice(0, 48_000) : '[Whole-document text is unavailable.]';
-  return `Current document page: ${input.pageNumber}\n\nCurrent page text (primary focus):\n${page}\n\nWhole document context (consult when useful):\n${document}${history ? `\n\nRecent conversation on page ${input.pageNumber}:\n${history}` : ''}\n\nStudent question:\n${input.prompt}`;
+  const focus = input.scope === 'document'
+    ? 'Study scope: WHOLE DOCUMENT. Synthesize across all supplied pages, cite relevant page numbers, and do not treat the current page as the primary focus.'
+    : `Study scope: PAGE ${input.pageNumber}. Focus on this page first, using the wider document when useful.`;
+  return `${focus}\n\nCurrent document page: ${input.pageNumber}\n\nCurrent page text:\n${page}\n\nWhole document context:\n${document}${history ? `\n\nRecent ${input.scope === 'document' ? 'whole-document' : `page ${input.pageNumber}`} conversation:\n${history}` : ''}\n\nStudent question:\n${input.prompt}`;
 }
 
 async function providerFetch(url: string, init: RequestInit, timeoutMs = 60_000) {

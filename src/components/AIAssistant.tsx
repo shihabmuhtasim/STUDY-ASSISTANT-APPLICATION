@@ -9,13 +9,17 @@ import { EditInsertModal } from './EditInsertModal';
 import { AIConnectionsModal } from './AIConnectionsModal';
 import { loadCloudPreferences, saveCloudPreferences } from '../services/cloudData';
 import { deleteEncryptedConnection, loadSavedConnections, saveEncryptedConnection } from '../services/connectionStore';
+import { buildQuestionDocumentContext } from '../utils/documentContext';
 
 interface AIAssistantProps {
   pageNumber: number;
   pageImage: string | null;
   pageText: string;
   documentContext: string;
+  documentPages?: string[];
   isDocumentContextLoading: boolean;
+  documentContextProgress?: string | null;
+  scope?: 'page' | 'document';
   history: AIInteraction[];
   account: AccountSummary | AccountIdentity | null;
   onRemainingChange: (remaining: number, remainingPercent?: number) => void;
@@ -24,7 +28,8 @@ interface AIAssistantProps {
   onInsertToNotes: (text: string, questionHeader?: string) => void;
 }
 
-const quickPrompts = ['Summarize this page', 'Explain the key ideas', 'Create 3 quiz questions'];
+const pageQuickPrompts = ['Summarize this page', 'Explain the key ideas', 'Create 3 quiz questions'];
+const documentQuickPrompts = ['Summarize the whole document', 'Create a complete study guide', 'List the main topics and conclusions'];
 const modelOptions: Array<{ value: AIModelPreference; label: string }> = [
   { value: 'basic', label: 'Study Basic' },
   { value: 'auto', label: 'Auto · Best available' },
@@ -73,7 +78,10 @@ export function AIAssistant({
   pageImage,
   pageText,
   documentContext,
+  documentPages = [],
   isDocumentContextLoading,
+  documentContextProgress,
+  scope = 'page',
   history,
   account,
   onRemainingChange,
@@ -163,8 +171,12 @@ export function AIAssistant({
 
   const handleAsk = async (text: string) => {
     if (!text.trim() || isLoading || isDocumentContextLoading) return;
-    if (!pageText.trim() && !pageImage) {
+    if (scope === 'page' && !pageText.trim() && !pageImage) {
       setError('The page is still being prepared. Try again in a moment.');
+      return;
+    }
+    if (scope === 'document' && !documentContext.trim()) {
+      setError('The whole document is still being prepared. Try again in a moment.');
       return;
     }
 
@@ -182,9 +194,10 @@ export function AIAssistant({
         prompt: text.trim(),
         pageNumber,
         pageText,
-        documentContext,
+        documentContext: buildQuestionDocumentContext(documentPages, text, pageNumber, scope) || documentContext,
         pageImage: includeImage ? pageImage || undefined : undefined,
         history,
+        scope,
       };
       let result;
       if (modelPreference === 'custom' && activeConnection) {
@@ -263,7 +276,7 @@ export function AIAssistant({
       <div className="p-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <Sparkles size={18} className="text-indigo-600 shrink-0" />
-          <h3 className="font-medium text-slate-800 text-sm truncate">AI Page Assistant</h3>
+          <h3 className="font-medium text-slate-800 text-sm truncate">{scope === 'document' ? 'AI Document Assistant' : 'AI Page Assistant'}</h3>
         </div>
         <span className="text-xs font-medium text-slate-500 whitespace-nowrap">Document-aware</span>
       </div>
@@ -272,10 +285,10 @@ export function AIAssistant({
         {history.length === 0 ? (
           <div className="py-8 text-center">
             <Sparkles size={24} className="mx-auto text-indigo-500" />
-            <p className="mt-3 font-medium text-slate-700 text-sm">Ask about page {pageNumber}</p>
-            <p className="text-xs text-slate-500 mt-1">Answers are grounded in this page's text and optional page image.</p>
+            <p className="mt-3 font-medium text-slate-700 text-sm">{scope === 'document' ? 'Ask about the whole document' : `Ask about page ${pageNumber}`}</p>
+            <p className="text-xs text-slate-500 mt-1">{scope === 'document' ? 'Answers consider every indexed page and can be inserted into whole-document notes.' : "Answers are grounded in this page's text and optional page image."}</p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
-              {quickPrompts.map((item) => (
+              {(scope === 'document' ? documentQuickPrompts : pageQuickPrompts).map((item) => (
                 <button key={item} type="button" onClick={() => handleAsk(item)} disabled={isDocumentContextLoading} className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-700 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-40">{item}</button>
               ))}
             </div>
@@ -303,14 +316,14 @@ export function AIAssistant({
             <div className="flex justify-end"><div className="bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-medium max-w-[85%]">{pendingPrompt}</div></div>
             <div className="flex items-center gap-2 bg-indigo-50/70 border border-indigo-100 rounded-lg px-4 py-3 text-sm text-indigo-800">
               <Loader2 size={16} className="animate-spin text-indigo-600" />
-              <span>Thinking about page {pageNumber} and the document…</span>
+              <span>{scope === 'document' ? 'Thinking across the whole document…' : `Thinking about page ${pageNumber} and the document…`}</span>
             </div>
           </div>
         )}
       </div>
 
       <div className="p-3 border-t border-slate-100 bg-white shrink-0">
-        {isDocumentContextLoading && <p className="mb-2 flex items-center gap-2 text-xs text-slate-500"><Loader2 size={13} className="animate-spin text-indigo-600" />Indexing the whole document…</p>}
+        {isDocumentContextLoading && <p className="mb-2 flex items-center gap-2 text-xs text-slate-500"><Loader2 size={13} className="animate-spin text-indigo-600" />{documentContextProgress || 'Indexing the whole document…'}</p>}
         {error && <p role="alert" className="mb-2 text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <div className="relative flex items-center gap-2 text-xs text-slate-600">
@@ -341,7 +354,7 @@ export function AIAssistant({
             type="text"
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
-            placeholder={isDocumentContextLoading ? 'Preparing document context…' : 'Ask about this page or the whole document…'}
+            placeholder={isDocumentContextLoading ? 'Preparing document context…' : scope === 'document' ? 'Ask anything about the whole document…' : 'Ask about this page or the whole document…'}
             disabled={isLoading || isDocumentContextLoading}
             maxLength={4000}
             className="w-full pl-4 pr-11 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs sm:text-sm focus:border-indigo-500 disabled:opacity-60"

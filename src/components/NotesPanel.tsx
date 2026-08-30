@@ -7,12 +7,13 @@ import { RichTextEditor, richTextToPlainText, toRichTextHtml } from './RichTextE
 
 interface NotesPanelProps {
   note: PageNote;
+  title?: string;
   onChange: (content: string, blocks?: NoteBlock[]) => void;
   onClear: () => void;
   onSave: () => void;
 }
 
-export function NotesPanel({ note, onChange, onClear, onSave }: NotesPanelProps) {
+export function NotesPanel({ note, title, onChange, onClear, onSave }: NotesPanelProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
@@ -84,11 +85,11 @@ export function NotesPanel({ note, onChange, onClear, onSave }: NotesPanelProps)
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 p-3">
         <div className="flex min-w-0 items-center gap-2">
           <FileText size={18} className="shrink-0 text-emerald-600" />
-          <h3 className="truncate text-sm font-semibold text-slate-800">Notes for Page {note.pageNumber}</h3>
+          <h3 className="truncate text-sm font-semibold text-slate-800">{title || `Notes for Page ${note.pageNumber}`}</h3>
           <span className="text-xs text-slate-400">{blocks.length}</span>
         </div>
         <div className="flex items-center gap-1">
-          <button type="button" onClick={onClear} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Clear page notes"><Trash2 size={16} /></button>
+          <button type="button" onClick={onClear} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" title={`Clear ${title ? 'whole-document' : 'page'} notes`}><Trash2 size={16} /></button>
           <button type="button" onClick={onSave} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"><Save size={14} /> Save</button>
         </div>
       </div>

@@ -8,6 +8,7 @@ interface CustomAIInput {
   pageNumber: number;
   pageText: string;
   documentContext: string;
+  scope?: 'page' | 'document';
   pageImage?: string;
   history: AIInteraction[];
   testMode?: boolean;
@@ -49,6 +50,7 @@ export async function askCustomAI(input: CustomAIInput) {
       pageNumber: input.pageNumber,
       pageText: input.pageText,
       documentContext: input.documentContext,
+      scope: input.scope || 'page',
       pageImage: input.pageImage,
       history: input.history,
       testMode: input.testMode === true,

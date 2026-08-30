@@ -97,7 +97,7 @@ export async function loadCloudWorkspace(userId: string, documentId: string) {
   snapshot.forEach((item) => {
     const data = item.data() as { pageNumber?: number; note?: PageNote; annotations?: AnnotationStroke[] };
     const pageNumber = Number(data.pageNumber || item.id);
-    if (!Number.isInteger(pageNumber) || pageNumber < 1) return;
+    if (!Number.isInteger(pageNumber) || pageNumber < 0) return;
     if (data.note) notes[pageNumber] = data.note;
     if (Array.isArray(data.annotations)) annotations[pageNumber] = data.annotations;
   });

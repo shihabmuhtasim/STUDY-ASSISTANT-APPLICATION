@@ -188,6 +188,113 @@ export function stripMarkdown(text: string): string {
     .trim();
 }
 
+function hasNoteContent(note?: PageNote) {
+  return Boolean(note && (note.content?.trim() || note.blocks?.length));
+}
+
+function renderWholeDocumentNotes(doc: jsPDF, note: PageNote, documentTitle: string) {
+  const margin = 15;
+  const pageWidth = doc.internal.pageSize.width;
+  const pageHeight = doc.internal.pageSize.height;
+  const contentWidth = pageWidth - margin * 2;
+  const notesTop = margin + 27;
+  const notesBottom = pageHeight - margin;
+  const cardPadding = 11;
+  const cardGap = 6;
+  let currentY = notesTop;
+  let pageCount = 0;
+
+  const footer = () => {
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(148, 163, 184);
+    doc.text(`Whole-document notes - ${documentTitle}`, pageWidth / 2, pageHeight - 6, { align: 'center' });
+  };
+
+  const startPage = (continued: boolean) => {
+    if (pageCount > 0) {
+      footer();
+      doc.addPage();
+    }
+    pageCount += 1;
+    doc.setFillColor(238, 242, 255);
+    doc.roundedRect(margin, margin, contentWidth, 20, 3, 3, 'F');
+    doc.setFillColor(79, 70, 229);
+    doc.rect(margin, margin, 4, 20, 'F');
+    doc.setFontSize(15);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 41, 59);
+    doc.text(`Notes about the whole document${continued ? ' (continued)' : ''}`, margin + 8, margin + 9);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text((doc.splitTextToSize(documentTitle, contentWidth - 16) as string[])[0] || documentTitle, margin + 8, margin + 15);
+    currentY = notesTop;
+  };
+
+  const blocks: NoteBlock[] = note.blocks?.length
+    ? note.blocks
+    : note.content?.trim()
+      ? [{ id: 'document-legacy', content: note.content, createdAt: Date.now(), isAiGenerated: false }]
+      : [];
+
+  startPage(false);
+  for (const block of blocks) {
+    const parsedLines = parseMarkdownToCleanLines(block.content);
+    if (block.question) parsedLines.unshift({ text: `Q: ${stripMarkdown(block.question)}`, type: 'question', raw: block.question });
+    const lines: RenderLine[] = [];
+    for (const item of parsedLines) {
+      const heading = item.type === 'question' || item.type === 'h1' || item.type === 'h2' || item.type === 'h3';
+      const fontSize = item.type === 'h1' || item.type === 'h2' ? 12 : heading ? 11 : 10;
+      const indent = item.type === 'bullet' ? 6 : 0;
+      const text = item.type === 'bullet' ? `- ${item.text}` : item.text;
+      doc.setFontSize(fontSize);
+      doc.setFont('helvetica', heading ? 'bold' : 'normal');
+      const wrapped = doc.splitTextToSize(text, contentWidth - 12 - indent) as string[];
+      wrapped.forEach((line, index) => lines.push({ text: line, type: item.type, indent, fontSize, isBold: heading, height: fontSize * 0.45 + 2, gapAfter: index === wrapped.length - 1 ? 1.5 : 0 }));
+    }
+
+    let lineIndex = 0;
+    while (lineIndex < lines.length) {
+      const available = notesBottom - currentY - cardPadding;
+      let chunkHeight = 0;
+      let chunkEnd = lineIndex;
+      while (chunkEnd < lines.length) {
+        const nextHeight = lines[chunkEnd].height + lines[chunkEnd].gapAfter;
+        if (chunkEnd > lineIndex && chunkHeight + nextHeight > available) break;
+        if (chunkEnd === lineIndex && nextHeight > available) break;
+        chunkHeight += nextHeight;
+        chunkEnd += 1;
+      }
+      if (chunkEnd === lineIndex) {
+        startPage(true);
+        continue;
+      }
+
+      const blockHeight = cardPadding + chunkHeight;
+      const isAi = Boolean(block.isAiGenerated);
+      doc.setFillColor(isAi ? 245 : 248, isAi ? 247 : 250, isAi ? 255 : 252);
+      doc.setDrawColor(isAi ? 224 : 226, isAi ? 231 : 232, isAi ? 255 : 240);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(margin, currentY, contentWidth, blockHeight, 2, 2, 'FD');
+      doc.setFillColor(isAi ? 99 : 16, isAi ? 102 : 185, isAi ? 241 : 129);
+      doc.rect(margin, currentY, 2.5, blockHeight, 'F');
+      let textY = currentY + 7;
+      for (const line of lines.slice(lineIndex, chunkEnd)) {
+        doc.setFontSize(line.fontSize);
+        doc.setFont('helvetica', line.isBold ? 'bold' : 'normal');
+        doc.setTextColor(line.type === 'question' ? 67 : 51, line.type === 'question' ? 56 : 65, line.type === 'question' ? 202 : 85);
+        doc.text(line.text, margin + 6 + line.indent, textY);
+        textY += line.height + line.gapAfter;
+      }
+      currentY += blockHeight + cardGap;
+      lineIndex = chunkEnd;
+      if (lineIndex < lines.length) startPage(true);
+    }
+  }
+  footer();
+}
+
 /**
  * Export PDF Study Pack with high-resolution page images and beautifully styled note boxes
  */
@@ -213,6 +320,11 @@ export async function exportStudyPackPDF(
   const pageWidth = doc.internal.pageSize.width;
   const pageHeight = doc.internal.pageSize.height;
   const contentWidth = pageWidth - margin * 2;
+  const hasWholeDocumentNotes = hasNoteContent(notes[0]);
+  if (hasWholeDocumentNotes) {
+    if (onProgress) onProgress('Formatting whole-document notes...');
+    renderWholeDocumentNotes(doc, notes[0], documentTitle);
+  }
 
   for (let pageIdx = 1; pageIdx <= pdf.numPages; pageIdx++) {
     if (onProgress) onProgress(`Rendering page ${pageIdx} of ${pdf.numPages}...`);
@@ -230,7 +342,7 @@ export async function exportStudyPackPDF(
       drawAnnotationsOnCanvas(context, canvas.width, canvas.height, annotations[pageIdx] || []);
       const imgData = canvas.toDataURL('image/jpeg', 0.85);
 
-      if (pageIdx > 1) doc.addPage();
+      if (pageIdx > 1 || hasWholeDocumentNotes) doc.addPage();
 
       const imgProps = doc.getImageProperties(imgData);
       const pdfRatio = imgProps.width / imgProps.height;

@@ -63,6 +63,7 @@ export async function POST(request: Request) {
       history: body.history?.slice(-3),
       modelPreference: hasProAccess ? body.modelPreference : 'basic',
       allowFallback: hasProAccess ? body.allowFallback : false,
+      scope: body.scope === 'document' ? 'document' : 'page',
     });
     await recordAIUsage({
       userId: user.uid,

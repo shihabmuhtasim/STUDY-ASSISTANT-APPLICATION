@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Study Assistant',
-  description: 'Read PDFs, build page-linked notes, and study with a page-aware AI assistant.',
+  description: 'Read documents, use OCR, build page or whole-document notes, and study with a document-aware AI assistant.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

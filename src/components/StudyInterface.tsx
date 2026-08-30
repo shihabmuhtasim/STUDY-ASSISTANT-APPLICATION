@@ -4,7 +4,7 @@ import { NotesPanel } from './NotesPanel';
 import { AIAssistant } from './AIAssistant';
 import { AccountIdentity, AccountSummary, StudyDocument, PageNote, AIInteraction, NoteBlock, AnnotationStroke } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { ArrowLeft, Download, BookOpen, GripVertical, GripHorizontal, FileText, Sparkles, LayoutGrid, Eye, Check } from 'lucide-react';
+import { ArrowLeft, Download, BookOpen, GripVertical, GripHorizontal, FileText, Sparkles, LayoutGrid, Eye, Files } from 'lucide-react';
 import { get, set } from 'idb-keyval';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { exportStudyPackPDF } from '../utils/pdfExport';
@@ -25,7 +25,9 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   const [pageImage, setPageImage] = useState<string | null>(null);
   const [pageText, setPageText] = useState('');
   const [documentContext, setDocumentContext] = useState('');
+  const [documentPages, setDocumentPages] = useState<string[]>([]);
   const [isDocumentContextLoading, setIsDocumentContextLoading] = useState(true);
+  const [documentContextProgress, setDocumentContextProgress] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<number, PageNote>>({});
   const [isNotesLoaded, setIsNotesLoaded] = useState(false);
   const [annotations, setAnnotations] = useState<Record<number, AnnotationStroke[]>>({});
@@ -33,6 +35,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<string | null>(null);
   const cloudSaveTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const [studyScope, setStudyScope] = useState<'page' | 'document'>('page');
 
   // Universal Layout Mode: 'split' (all 3 panes visible) | 'tabs' (1 pane visible with tab navigation) | 'pdf-only'
   const [layoutMode, setLayoutMode] = useState<'split' | 'tabs' | 'pdf-only'>('split');
@@ -101,10 +104,11 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     set(`annotations_${document.id}`, annotations).catch((error) => console.error('Failed to save annotations', error));
   }, [annotations, areAnnotationsLoaded, document.id]);
 
-  const currentNote: PageNote = notes[pageNumber] || {
+  const activeNoteKey = studyScope === 'document' ? 0 : pageNumber;
+  const currentNote: PageNote = notes[activeNoteKey] || {
     id: uuidv4(),
     documentId: document.id,
-    pageNumber,
+    pageNumber: activeNoteKey,
     content: '',
     blocks: [],
     aiHistory: [],
@@ -128,13 +132,14 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     };
     setNotes(prev => ({
       ...prev,
-      [pageNumber]: nextNote,
+      [activeNoteKey]: nextNote,
     }));
-    queueCloudSave(pageNumber, nextNote, annotations[pageNumber] || []);
+    queueCloudSave(activeNoteKey, nextNote, studyScope === 'document' ? [] : annotations[pageNumber] || []);
   };
 
   const handleClearNote = () => {
-    if (window.confirm(`Are you sure you want to clear all notes for Page ${pageNumber}?`)) {
+    const label = studyScope === 'document' ? 'the whole document' : `Page ${pageNumber}`;
+    if (window.confirm(`Are you sure you want to clear all notes for ${label}?`)) {
       handleNoteChange('', []);
     }
   };
@@ -146,9 +151,9 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     };
     setNotes(prev => ({
       ...prev,
-      [pageNumber]: nextNote,
+      [activeNoteKey]: nextNote,
     }));
-    queueCloudSave(pageNumber, nextNote, annotations[pageNumber] || []);
+    queueCloudSave(activeNoteKey, nextNote, studyScope === 'document' ? [] : annotations[pageNumber] || []);
   };
 
   const handleInsertToNotes = (editedText: string, questionHeader?: string) => {
@@ -203,21 +208,34 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     onPageRenderSuccess: setPageImage,
     onPageTextReady: setPageText,
     onDocumentContextReady: setDocumentContext,
+    onDocumentPagesReady: setDocumentPages,
     onDocumentContextLoadingChange: setIsDocumentContextLoading,
+    onDocumentContextProgress: setDocumentContextProgress,
     onDocumentLoaded: handleDocumentLoaded,
     annotations: annotations[pageNumber] || [],
     onAnnotationsChange: (strokes: AnnotationStroke[]) => {
       setAnnotations((current) => ({ ...current, [pageNumber]: strokes }));
-      queueCloudSave(pageNumber, currentNote, strokes);
+      const pageNote = notes[pageNumber] || {
+        id: uuidv4(),
+        documentId: document.id,
+        pageNumber,
+        content: '',
+        blocks: [],
+        aiHistory: [],
+      };
+      queueCloudSave(pageNumber, pageNote, strokes);
     },
   };
 
   const aiAssistantProps = {
     pageNumber,
     pageImage,
-    pageText,
+    pageText: studyScope === 'document' ? '' : pageText,
     documentContext,
+    documentPages,
     isDocumentContextLoading,
+    documentContextProgress,
+    scope: studyScope,
     history: currentNote.aiHistory || [],
     account,
     onRemainingChange: handleRemainingChange,
@@ -267,6 +285,22 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
 
         {/* Global Layout Switcher for Laptop, Tablet & Mobile */}
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setStudyScope((current) => {
+                const next = current === 'page' ? 'document' : 'page';
+                if (next === 'document') setPageNumber(1);
+                return next;
+              });
+            }}
+            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${studyScope === 'document' ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:text-indigo-700'}`}
+            title="Switch between page notes and whole-document study"
+          >
+            <Files size={15} />
+            <span className="hidden sm:inline">{studyScope === 'document' ? 'Whole document' : 'Study whole document'}</span>
+            <span className="sm:hidden">Whole PDF</span>
+          </button>
           <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
             <button
               onClick={() => setLayoutMode('split')}
@@ -319,6 +353,16 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
         </div>
       </header>
 
+      {studyScope === 'document' && (
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-indigo-200 bg-indigo-50 px-4 py-2 text-indigo-950">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-indigo-600 text-white"><Files size={16} /></span>
+            <div className="min-w-0"><p className="truncate text-sm font-semibold">Whole-document study</p><p className="truncate text-xs text-indigo-700">AI uses the full document context. Notes are exported before the original pages.</p></div>
+          </div>
+          <button type="button" onClick={() => setStudyScope('page')} className="shrink-0 rounded-md border border-indigo-200 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100">Return to page study</button>
+        </div>
+      )}
+
       {/* Tab Selector Bar when in 'tabs' layout mode */}
       {layoutMode === 'tabs' && (
         <div className="flex items-center justify-around bg-white border-b border-slate-200 px-2 py-1.5 shrink-0 z-20 shadow-2xs">
@@ -343,7 +387,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
             }`}
           >
             <FileText size={16} />
-            <span>Notes (P. {pageNumber})</span>
+            <span>{studyScope === 'document' ? 'Whole Notes' : `Notes (P. ${pageNumber})`}</span>
             {currentNote.blocks && currentNote.blocks.length > 0 && (
               <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] flex items-center justify-center font-bold">
                 {currentNote.blocks.length}
@@ -386,14 +430,14 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-full text-xs font-medium transition-colors"
                   >
                     <Sparkles size={14} />
-                    Ask AI (Page {pageNumber})
+                    {studyScope === 'document' ? 'Ask about whole document' : `Ask AI (Page ${pageNumber})`}
                   </button>
                   <button
                     onClick={() => setActiveTab('notes')}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded-full text-xs font-medium transition-colors"
                   >
                     <FileText size={14} />
-                    Page Notes
+                    {studyScope === 'document' ? 'Whole Notes' : 'Page Notes'}
                   </button>
                 </div>
               </div>
@@ -403,6 +447,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
               <div className="h-full w-full">
                 <NotesPanel
                   note={currentNote}
+                  title={studyScope === 'document' ? 'Notes about the whole document' : undefined}
                   onChange={handleNoteChange}
                   onClear={handleClearNote}
                   onSave={() => {
@@ -439,6 +484,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
                 <Panel defaultSize={45} minSize={20} className="p-1">
                   <NotesPanel
                     note={currentNote}
+                    title={studyScope === 'document' ? 'Notes about the whole document' : undefined}
                     onChange={handleNoteChange}
                     onClear={handleClearNote}
                     onSave={() => {

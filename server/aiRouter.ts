@@ -4,10 +4,10 @@ import { getAIControlState } from './modelControls';
 
 export type AIHistoryItem = { prompt: string; response: string };
 export type AIModelPreference = 'auto' | 'basic' | 'gemini-flash' | 'gemini-flash-lite' | 'qwen' | 'llama' | 'gemma' | 'glm' | 'nemotron';
-export type AIRequest = { prompt: string; pageNumber: number; pageText?: string; documentText?: string; pageImage?: string; history?: AIHistoryItem[]; modelPreference?: AIModelPreference; allowFallback?: boolean };
+export type AIRequest = { prompt: string; pageNumber: number; pageText?: string; documentText?: string; pageImage?: string; history?: AIHistoryItem[]; modelPreference?: AIModelPreference; allowFallback?: boolean; scope?: 'page' | 'document' };
 type AIResult = { text: string; provider: 'cloudflare' | 'gemini' | 'local'; model: string; requestedModel?: AIModelPreference; fallbackUsed?: boolean };
 
-const SYSTEM_PROMPT = `You are a careful, capable study assistant working from a supplied document. Focus first on the current page and explain it in the context of the whole document. Use other pages when the question requires background, comparison, or information not repeated on the current page. If the document does not contain the answer, say so clearly. Preserve important names, numbers, formulas, and qualifications. Explain concepts in plain language, organize longer answers with short headings and bullets, and cite page numbers when referring to evidence. Match the student's requested language.`;
+const SYSTEM_PROMPT = `You are a careful, capable study assistant working from a supplied document. Follow the study scope stated in the user context: either prioritize the current page or synthesize the whole document. If the document does not contain the answer, say so clearly. Preserve important names, numbers, formulas, and qualifications. Explain concepts in plain language, organize longer answers with short headings and bullets, and cite page numbers when referring to evidence. Match the student's requested language.`;
 const GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash-lite'];
 const TEXT_MODELS = [
   '@cf/qwen/qwen3-30b-a3b-fp8',
@@ -157,10 +157,12 @@ async function runGemini(request: AIRequest, requestedModels?: string[], disable
 }
 
 function runLocalPageAnswer(request: AIRequest): AIResult {
-  const source = request.pageText?.replace(/\s+/g, ' ').trim() || '';
+  const source = (request.scope === 'document' ? request.documentText : request.pageText)?.replace(/\s+/g, ' ').trim() || '';
   if (!source) {
     return {
-      text: `### Page ${request.pageNumber}\n\nI could not extract readable text from this page. Turn on **Include page image** and ask again so the vision model can inspect it.`,
+      text: request.scope === 'document'
+        ? '### Whole document\n\nI could not extract readable text from this document. OCR may still be processing scanned pages.'
+        : `### Page ${request.pageNumber}\n\nI could not extract readable text from this page. Turn on **Include page image** and ask again so the vision model can inspect it.`,
       provider: 'local',
       model: 'page-text-fallback',
     };
@@ -185,7 +187,7 @@ function runLocalPageAnswer(request: AIRequest): AIResult {
   const selected = ranked.slice(0, 6).sort((a, b) => a.index - b.index);
   const hasDirectMatch = queryWords.length === 0 || (ranked[0]?.overlap || 0) > 0;
   const generic = /summari[sz]e|explain|key ideas?|main points?|what (?:is|does) this page/i.test(request.prompt);
-  const heading = generic ? `Page ${request.pageNumber} explained` : `Answer from page ${request.pageNumber}`;
+  const heading = request.scope === 'document' ? 'Whole document overview' : generic ? `Page ${request.pageNumber} explained` : `Answer from page ${request.pageNumber}`;
   const lead = hasDirectMatch
     ? 'The most relevant information on this page is:'
     : 'I could not find a direct statement matching every part of the question. These are the closest relevant details:';
@@ -194,7 +196,7 @@ function runLocalPageAnswer(request: AIRequest): AIResult {
     : `- ${source.slice(0, 900)}`;
 
   return {
-    text: `### ${heading}\n\n${lead}\n\n${bullets}\n\n*Answer generated directly from the extracted text on page ${request.pageNumber}.*`,
+    text: `### ${heading}\n\n${lead}\n\n${bullets}\n\n*Answer generated directly from the extracted ${request.scope === 'document' ? 'document text' : `text on page ${request.pageNumber}`}.*`,
     provider: 'local',
     model: 'page-text-fallback',
   };
@@ -210,7 +212,10 @@ function buildContext(request: AIRequest) {
   const history = (request.history || []).slice(-3).map((item) => `Student: ${item.prompt}\nAssistant: ${item.response}`).join('\n\n');
   const pageText = request.pageText?.trim() ? request.pageText.slice(0, 12_000) : '[No selectable text was extracted from this page. Use the page image if supplied.]';
   const documentText = request.documentText?.trim() ? request.documentText.slice(0, 48_000) : '[Whole-document text is unavailable.]';
-  return `Current document page: ${request.pageNumber}\n\nCurrent page text (primary focus):\n${pageText}\n\nWhole document context (consult when useful):\n${documentText}${history ? `\n\nRecent conversation on page ${request.pageNumber}:\n${history}` : ''}\n\nStudent question:\n${request.prompt}`;
+  const focus = request.scope === 'document'
+    ? 'Study scope: WHOLE DOCUMENT. Synthesize across all supplied pages, cite relevant page numbers, and do not treat the current page as the primary focus.'
+    : `Study scope: PAGE ${request.pageNumber}. Focus on this page first, using the wider document for context or cross-page questions.`;
+  return `${focus}\n\nCurrent document page: ${request.pageNumber}\n\nCurrent page text:\n${pageText}\n\nWhole document context:\n${documentText}${history ? `\n\nRecent ${request.scope === 'document' ? 'whole-document' : `page ${request.pageNumber}`} conversation:\n${history}` : ''}\n\nStudent question:\n${request.prompt}`;
 }
 
 function modelList(value: string | undefined, defaults: string[]) {

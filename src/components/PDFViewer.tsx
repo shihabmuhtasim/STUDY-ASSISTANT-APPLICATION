@@ -4,6 +4,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { ChevronLeft, ChevronRight, Eraser, Highlighter, Loader2, PenLine, RotateCcw, Search, Trash2, Type, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { AnnotationStroke, AnnotationTool } from '../types';
 import { AnnotationCanvas } from './AnnotationCanvas';
+import { recognizeScannedPage } from '../services/ocr';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
@@ -16,13 +17,15 @@ interface PDFViewerProps {
   onPageRenderSuccess: (base64Image: string) => void;
   onPageTextReady: (text: string) => void;
   onDocumentContextReady: (text: string) => void;
+  onDocumentPagesReady: (pages: string[]) => void;
   onDocumentContextLoadingChange: (loading: boolean) => void;
+  onDocumentContextProgress: (status: string | null) => void;
   onDocumentLoaded: (totalPages: number) => void;
   annotations: AnnotationStroke[];
   onAnnotationsChange: (strokes: AnnotationStroke[]) => void;
 }
 
-export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess, onPageTextReady, onDocumentContextReady, onDocumentContextLoadingChange, onDocumentLoaded, annotations, onAnnotationsChange }: PDFViewerProps) {
+export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess, onPageTextReady, onDocumentContextReady, onDocumentPagesReady, onDocumentContextLoadingChange, onDocumentContextProgress, onDocumentLoaded, annotations, onAnnotationsChange }: PDFViewerProps) {
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [scale, setScale] = useState(1.0);
@@ -42,6 +45,7 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
   const pageRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const textCache = useRef(new Map<number, string>());
+  const textPromises = useRef(new Map<number, Promise<string>>());
   const pinchStart = useRef<{ distance: number; scale: number } | null>(null);
   const touchPan = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
 
@@ -72,16 +76,44 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
     if (!pdfDocument) return '';
     const cached = textCache.current.get(page);
     if (cached !== undefined) return cached;
-    const pdfPage = await pdfDocument.getPage(page);
-    const content = await pdfPage.getTextContent();
-    const text = content.items
-      .map((item) => ('str' in item ? item.str : ''))
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    textCache.current.set(page, text);
-    return text;
-  }, [pdfDocument]);
+    const pending = textPromises.current.get(page);
+    if (pending) return pending;
+
+    const extraction = (async () => {
+      const pdfPage = await pdfDocument.getPage(page);
+      const content = await pdfPage.getTextContent();
+      let text = content.items
+        .map((item) => ('str' in item ? item.str : ''))
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (text.length < 40) {
+        onDocumentContextProgress(`Scanning page ${page} with OCR...`);
+        const viewport = pdfPage.getViewport({ scale: 1.7 });
+        const canvas = window.document.createElement('canvas');
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        if (context) {
+          await pdfPage.render({ canvasContext: context, viewport } as never).promise;
+          const recognized = await recognizeScannedPage(canvas, (progress) => {
+            onDocumentContextProgress(`Scanning page ${page} with OCR · ${Math.round(progress * 100)}%`);
+          });
+          if (recognized.length > text.length) text = recognized;
+        }
+      }
+
+      textCache.current.set(page, text);
+      textPromises.current.delete(page);
+      return text;
+    })().catch((error) => {
+      textPromises.current.delete(page);
+      throw error;
+    });
+    textPromises.current.set(page, extraction);
+    return extraction;
+  }, [onDocumentContextProgress, pdfDocument]);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,31 +133,43 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
     if (!pdfDocument) return;
     const buildDocumentContext = async () => {
       onDocumentContextLoadingChange(true);
+      onDocumentContextProgress('Reading document text...');
       onDocumentContextReady('');
+      onDocumentPagesReady([]);
       const pageBudget = Math.max(40, Math.min(2_000, Math.floor(48_000 / pdfDocument.numPages) - 20));
       const pages: string[] = [];
+      const fullPages: string[] = [];
       try {
         for (let page = 1; page <= pdfDocument.numPages; page += 1) {
           if (cancelled) return;
+          onDocumentContextProgress(`Indexing page ${page} of ${pdfDocument.numPages}...`);
           const text = await extractPageText(page);
+          fullPages.push(text);
           pages.push(`[Page ${page}] ${text.slice(0, pageBudget)}`);
         }
-        if (!cancelled) onDocumentContextReady(pages.join('\n').slice(0, 48_000));
+        if (!cancelled) {
+          onDocumentPagesReady(fullPages);
+          onDocumentContextReady(pages.join('\n').slice(0, 48_000));
+        }
       } catch (error) {
         console.error('Failed to prepare document context', error);
       } finally {
-        if (!cancelled) onDocumentContextLoadingChange(false);
+        if (!cancelled) {
+          onDocumentContextProgress(null);
+          onDocumentContextLoadingChange(false);
+        }
       }
     };
     void buildDocumentContext();
     return () => { cancelled = true; };
-  }, [extractPageText, onDocumentContextLoadingChange, onDocumentContextReady, pdfDocument]);
+  }, [extractPageText, onDocumentContextLoadingChange, onDocumentContextProgress, onDocumentContextReady, onDocumentPagesReady, pdfDocument]);
 
   function onDocumentLoadSuccess(pdf: PDFDocumentProxy) {
     setPdfDocument(pdf);
     setNumPages(pdf.numPages);
     setLoadError(null);
     textCache.current.clear();
+    textPromises.current.clear();
     onDocumentLoaded(pdf.numPages);
   }
 
