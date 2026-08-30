@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Study Assistant',
-  description: 'Read documents, use OCR, build page or whole-document notes, and study with a document-aware AI assistant.',
+  title: 'Clarivo — Study every page. Keep every insight.',
+  description: 'Clarivo is an AI study workspace that reads documents page by page, keeps questions grounded, and organizes your notes beside every page.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

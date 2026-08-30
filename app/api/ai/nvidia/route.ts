@@ -12,7 +12,7 @@ function isSameOrigin(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!isSameOrigin(request)) return NextResponse.json({ error: 'This request must come from Study Assistant.' }, { status: 403 });
+  if (!isSameOrigin(request)) return NextResponse.json({ error: 'This request must come from Clarivo.' }, { status: 403 });
 
   const apiKey = request.headers.get('x-nvidia-api-key')?.trim();
   if (!apiKey || apiKey.length > 1_024) return NextResponse.json({ error: 'Enter a valid NVIDIA API key.' }, { status: 401 });
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const timedOut = error instanceof DOMException && error.name === 'AbortError';
-    return NextResponse.json({ error: timedOut ? 'NVIDIA took too long to respond.' : 'NVIDIA could not be reached by the Study Assistant service.' }, { status: 502 });
+    return NextResponse.json({ error: timedOut ? 'NVIDIA took too long to respond.' : 'NVIDIA could not be reached by the Clarivo service.' }, { status: 502 });
   } finally {
     clearTimeout(timeout);
   }

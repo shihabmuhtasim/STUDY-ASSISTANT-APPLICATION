@@ -42,6 +42,7 @@ export default function App({ initialAccount }: AppProps) {
   const [driveLinked, setDriveLinked] = useState(false);
   const [driveBusy, setDriveBusy] = useState(false);
   const [cloudMessage, setCloudMessage] = useState<string | null>(null);
+  const [libraryFocusRequest, setLibraryFocusRequest] = useState(0);
   const cloudLoadedFor = useRef<string | null>(null);
   const driveSyncedFor = useRef<string | null>(null);
   const legacyDocuments = useRef<StudyDocument[]>([]);
@@ -291,7 +292,7 @@ export default function App({ initialAccount }: AppProps) {
     }
     if (!driveLinked) {
       const confirmed = window.confirm(
-        'Connect Google Drive and synchronize your Study Assistant library? Existing documents in this browser will be uploaded to your own Google Drive account.',
+        'Connect Google Drive and synchronize your Clarivo library? Existing documents in this browser will be uploaded to your own Google Drive account.',
       );
       if (!confirmed) return;
     }
@@ -315,7 +316,7 @@ export default function App({ initialAccount }: AppProps) {
 
   const handleDisconnectDrive = async () => {
     if (!account || !driveLinked || driveBusy) return;
-    if (!window.confirm('Disconnect Google Drive from this Study Assistant account? Your files will remain in Google Drive.')) return;
+    if (!window.confirm('Disconnect Google Drive from this Clarivo account? Your files will remain in Google Drive.')) return;
     clearDriveSession();
     setDriveToken(null);
     setDriveLinked(false);
@@ -327,12 +328,20 @@ export default function App({ initialAccount }: AppProps) {
     setCloudMessage('Google Drive disconnected. Local documents remain available, and existing Drive files were not deleted.');
   };
 
+  const handleOpenLibrary = useCallback(() => {
+    setCurrentDocument(null);
+    setInfoView(null);
+    setAuthOpen(false);
+    setLibraryFocusRequest((request) => request + 1);
+  }, []);
+
   return (
     <AppErrorBoundary>
-      <div className={`${currentDocument ? 'h-screen overflow-hidden' : 'min-h-screen'} flex flex-col bg-slate-50 font-sans text-slate-900`}>
+      <div className={`${currentDocument ? 'h-screen overflow-hidden' : 'min-h-screen'} flex flex-col bg-[#f7f7f5] font-sans text-slate-900`}>
       <SiteNavigation
         account={account}
-        onLibrary={() => setCurrentDocument(null)}
+        isLibraryActive={!currentDocument}
+        onLibrary={handleOpenLibrary}
         onPlans={() => setInfoView('plans')}
         onContact={() => setInfoView('contact')}
         onAuth={() => setAuthOpen(true)}
@@ -348,7 +357,7 @@ export default function App({ initialAccount }: AppProps) {
       {currentDocument ? (
         <StudyInterface
           document={currentDocument}
-          onBack={() => setCurrentDocument(null)}
+          onBack={handleOpenLibrary}
           account={account}
           onAccountChange={setAccount}
           onUpdateDocument={handleUpdateDocument}
@@ -369,6 +378,7 @@ export default function App({ initialAccount }: AppProps) {
           cloudMessage={cloudMessage}
           onConnectDrive={handleConnectDrive}
           onDisconnectDrive={handleDisconnectDrive}
+          focusRequest={libraryFocusRequest}
         />
       )}
       </div>

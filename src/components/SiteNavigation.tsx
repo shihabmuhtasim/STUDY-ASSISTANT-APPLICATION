@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { BookOpen, ChevronDown, CircleUserRound, LogIn, LogOut, Mail, Menu, ShieldCheck, Sparkles, Tag, X } from 'lucide-react';
+import { BookOpenCheck, ChevronDown, CircleUserRound, FolderOpen, LogIn, LogOut, Mail, Menu, ShieldCheck, Sparkles, Tag, X } from 'lucide-react';
 import type { AccountIdentity, AccountSummary } from '../types';
 
 interface SiteNavigationProps {
   account: AccountIdentity | AccountSummary | null;
+  isLibraryActive: boolean;
   onLibrary: () => void;
   onPlans: () => void;
   onContact: () => void;
@@ -11,7 +12,7 @@ interface SiteNavigationProps {
   onSignOut: () => void;
 }
 
-export function SiteNavigation({ account, onLibrary, onPlans, onContact, onAuth, onSignOut }: SiteNavigationProps) {
+export function SiteNavigation({ account, isLibraryActive, onLibrary, onPlans, onContact, onAuth, onSignOut }: SiteNavigationProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const accessLabel = account && 'role' in account && account.role === 'admin'
@@ -27,15 +28,15 @@ export function SiteNavigation({ account, onLibrary, onPlans, onContact, onAuth,
   };
 
   return (
-    <header className="relative z-50 shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
-        <button type="button" onClick={onLibrary} className="flex min-w-0 items-center gap-2.5 text-left">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-indigo-600 text-white shadow-sm"><BookOpen size={19} /></span>
-          <span className="min-w-0"><span className="block truncate text-sm font-semibold text-slate-950">Study Assistant</span><span className="block truncate text-[11px] text-slate-500">AI document workspace</span></span>
+    <header className="relative z-50 shrink-0 border-b border-black/10 bg-white/90 backdrop-blur-xl">
+      <div className="mx-auto flex h-[68px] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
+        <button type="button" onClick={onLibrary} className="group flex min-w-0 items-center gap-3 text-left" aria-label="Open Clarivo library">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#171717] text-white shadow-sm transition group-hover:bg-indigo-600"><BookOpenCheck size={20} /></span>
+          <span className="min-w-0"><span className="block truncate text-[17px] font-semibold text-[#171717]">Clarivo</span><span className="block truncate text-[11px] font-medium text-slate-500">Page-by-page AI study</span></span>
         </button>
 
         <nav className="hidden items-center gap-1 md:flex" aria-label="Main navigation">
-          <button type="button" onClick={onLibrary} className="rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-950">Library</button>
+          <button type="button" onClick={onLibrary} aria-current={isLibraryActive ? 'page' : undefined} className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition ${isLibraryActive ? 'bg-[#f1f1ee] text-[#171717]' : 'text-slate-600 hover:bg-[#f7f7f5] hover:text-slate-950'}`}><FolderOpen size={15} />Library</button>
           <button type="button" onClick={onPlans} className="flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-950"><Tag size={15} />Plans</button>
           <button type="button" onClick={onContact} className="flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-950"><Mail size={15} />Contact</button>
         </nav>
@@ -74,7 +75,7 @@ export function SiteNavigation({ account, onLibrary, onPlans, onContact, onAuth,
         <button type="button" onClick={() => setMenuOpen((value) => !value)} className="rounded-md p-2 text-slate-600 hover:bg-slate-100 md:hidden" aria-label={menuOpen ? 'Close navigation' : 'Open navigation'}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
       </div>
 
-      {menuOpen && <nav className="absolute inset-x-0 top-16 border-b border-slate-200 bg-white p-3 shadow-xl md:hidden" aria-label="Mobile navigation">
+      {menuOpen && <nav className="absolute inset-x-0 top-[68px] border-b border-slate-200 bg-white p-3 shadow-xl md:hidden" aria-label="Mobile navigation">
         <button type="button" onClick={() => run(onLibrary)} className="block w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">Library</button>
         <button type="button" onClick={() => run(onPlans)} className="block w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">Plans</button>
         <button type="button" onClick={() => run(onContact)} className="block w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">Contact</button>

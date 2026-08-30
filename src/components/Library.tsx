@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { CheckCircle2, ChevronRight, Clock, Cloud, CloudOff, FileText, Loader2, NotebookPen, Pencil, Search, ShieldCheck, Sparkles, Trash2, Upload, X } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { BookOpenCheck, CheckCircle2, ChevronRight, Cloud, CloudOff, FileText, Layers3, Loader2, MessageSquareText, NotebookPen, Pencil, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { AccountIdentity, AccountSummary, StudyDocument } from '../types';
 import { DOCUMENT_ACCEPT, prepareStudyFile } from '../utils/documentImport';
@@ -18,16 +18,24 @@ interface LibraryProps {
   cloudMessage: string | null;
   onConnectDrive: () => void;
   onDisconnectDrive: () => void;
+  focusRequest: number;
 }
 
-export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocument, onUpdateDocument, account, onRequireAuth, driveConnected, driveLinked, driveBusy, cloudMessage, onConnectDrive, onDisconnectDrive }: LibraryProps) {
+export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocument, onUpdateDocument, account, onRequireAuth, driveConnected, driveLinked, driveBusy, cloudMessage, onConnectDrive, onDisconnectDrive, focusRequest }: LibraryProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const documentsRef = useRef<HTMLElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [query, setQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+
+  useEffect(() => {
+    if (focusRequest > 0) {
+      window.requestAnimationFrame(() => documentsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    }
+  }, [focusRequest]);
 
   const filteredDocuments = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -74,18 +82,20 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
   };
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <section className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
-          <div className="max-w-3xl">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase text-indigo-700"><Sparkles size={15} />Focused study workspace</div>
-            <h1 className="mt-3 text-3xl font-semibold text-slate-950 sm:text-4xl">Your study library</h1>
-            <p className="mt-3 text-sm leading-relaxed text-slate-600 sm:text-base">Open a document beside page-linked notes and ask the assistant about the exact material you are reading, with the wider document available for context.</p>
-          </div>
-          <div className="mt-7 grid max-w-3xl grid-cols-1 gap-3 border-t border-slate-200 pt-5 sm:grid-cols-3">
-            <div className="flex items-center gap-2.5 text-sm text-slate-600"><FileText size={18} className="text-indigo-600" />PDF and Word support</div>
-            <div className="flex items-center gap-2.5 text-sm text-slate-600"><NotebookPen size={18} className="text-emerald-600" />Page-linked notes</div>
-            <div className="flex items-center gap-2.5 text-sm text-slate-600"><ShieldCheck size={18} className="text-amber-600" />Private cloud workspace</div>
+    <main className="min-h-screen bg-[#f7f7f5]">
+      <section className="border-b border-black/10 bg-[#fcfcfa]">
+        <div className="mx-auto max-w-6xl px-4 py-9 sm:px-6 sm:py-12">
+          <div className="grid items-end gap-8 lg:grid-cols-[minmax(0,1fr)_390px]">
+            <div className="max-w-3xl">
+              <div className="flex items-center gap-2 text-xs font-semibold text-indigo-700"><Sparkles size={15} />AI that studies at your pace</div>
+              <h1 className="mt-4 max-w-2xl text-3xl font-semibold leading-tight text-[#171717] sm:text-5xl">Study every page. Keep every insight.</h1>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">Clarivo reads the document with you, one page at a time. Ask focused questions, keep unlimited notes beside the source, and stay organized without losing the context of the full document.</p>
+            </div>
+            <div className="grid grid-cols-1 divide-y divide-black/10 border-y border-black/10 sm:grid-cols-3 sm:divide-x sm:divide-y-0 lg:grid-cols-1 lg:divide-x-0 lg:divide-y">
+              <div className="flex items-center gap-2.5 px-1 py-3 text-xs font-medium text-slate-700 sm:px-3 lg:px-0"><BookOpenCheck size={17} className="shrink-0 text-indigo-600" /><span>Read one page</span></div>
+              <div className="flex items-center gap-2.5 px-1 py-3 text-xs font-medium text-slate-700 sm:px-3 lg:px-0"><MessageSquareText size={17} className="shrink-0 text-violet-600" /><span>Ask with context</span></div>
+              <div className="flex items-center gap-2.5 px-1 py-3 text-xs font-medium text-slate-700 sm:px-3 lg:px-0"><NotebookPen size={17} className="shrink-0 text-emerald-600" /><span>Organize every note</span></div>
+            </div>
           </div>
         </div>
       </section>
@@ -118,14 +128,14 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
         )}
 
         <section
-          className={`border-2 border-dashed rounded-lg p-7 sm:p-10 text-center transition-colors ${isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-slate-300 bg-white shadow-sm'}`}
+          className={`rounded-lg border p-7 text-center transition-colors sm:p-9 ${isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-black/10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)]'}`}
           onDragOver={(event) => { event.preventDefault(); setIsDragging(true); }}
           onDragLeave={() => setIsDragging(false)}
           onDrop={(event) => { event.preventDefault(); setIsDragging(false); const file = event.dataTransfer.files?.[0]; if (file) processFile(file); }}
         >
-          <span className="mx-auto grid h-12 w-12 place-items-center rounded-lg bg-indigo-50 text-indigo-700"><Upload size={24} /></span>
-          <h2 className="mt-3 text-lg font-semibold text-slate-900">Add a document</h2>
-          <p className="mt-1 text-sm text-slate-500">PDF, Word, text, Markdown, HTML, RTF, and CSV files are supported.</p>
+          <span className="mx-auto grid h-12 w-12 place-items-center rounded-lg bg-[#171717] text-white"><Upload size={22} /></span>
+          <h2 className="mt-3 text-lg font-semibold text-[#171717]">Bring in your next study document</h2>
+          <p className="mt-1 text-sm text-slate-500">Drop it here or browse PDF, Word, text, Markdown, HTML, RTF, and CSV files.</p>
           <button type="button" disabled={isImporting} onClick={() => !account ? onRequireAuth() : fileInputRef.current?.click()} className="mt-5 inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 text-sm disabled:opacity-60">
             {isImporting && <Loader2 size={15} className="animate-spin" />}
             {isImporting ? 'Preparing document…' : !account ? 'Sign in to add a document' : 'Select document'}
@@ -139,9 +149,9 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
           />
         </section>
 
-        <section className="mt-10">
+        <section ref={documentsRef} id="clarivo-library" className="mt-10 scroll-mt-24">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-            <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2"><Clock size={18} className="text-slate-400" />Documents <span className="text-sm font-normal text-slate-400">{documents.length}</span></h2>
+            <div><div className="flex items-center gap-2 text-xs font-semibold text-indigo-700"><Layers3 size={15} />YOUR WORKSPACE</div><h2 className="mt-1 text-xl font-semibold text-[#171717]">Study library <span className="text-sm font-normal text-slate-400">{documents.length}</span></h2></div>
             {documents.length > 0 && (
               <label className="relative block w-full sm:w-72">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />

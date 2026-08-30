@@ -13,7 +13,7 @@ export class AppErrorBoundary extends React.Component<React.PropsWithChildren, S
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error('Study Assistant render failed', error, info);
+    console.error('Clarivo render failed', error, info);
   }
 
   render() {
