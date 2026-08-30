@@ -4,10 +4,10 @@ import { getAIControlState } from './modelControls';
 
 export type AIHistoryItem = { prompt: string; response: string };
 export type AIModelPreference = 'auto' | 'basic' | 'gemini-flash' | 'gemini-flash-lite' | 'qwen' | 'llama' | 'gemma' | 'glm' | 'nemotron';
-export type AIRequest = { prompt: string; pageNumber: number; pageText?: string; documentText?: string; pageImage?: string; history?: AIHistoryItem[]; modelPreference?: AIModelPreference; allowFallback?: boolean; scope?: 'page' | 'document' };
+export type AIRequest = { prompt: string; pageNumber: number; pageText?: string; documentText?: string; pageImage?: string; history?: AIHistoryItem[]; modelPreference?: AIModelPreference; allowFallback?: boolean; scope?: 'page' | 'document'; referencesEnabled?: boolean };
 type AIResult = { text: string; provider: 'cloudflare' | 'gemini' | 'local'; model: string; requestedModel?: AIModelPreference; fallbackUsed?: boolean };
 
-const SYSTEM_PROMPT = `You are a careful, capable study assistant working from a supplied document. Follow the study scope stated in the user context: either prioritize the current page or synthesize the whole document. If the document does not contain the answer, say so clearly. Preserve important names, numbers, formulas, and qualifications. Explain concepts in plain language, organize longer answers with short headings and bullets, and cite page numbers when referring to evidence. Match the student's requested language.`;
+const SYSTEM_PROMPT = `You are a careful, capable study assistant working from supplied document evidence. Follow the study scope and reference-mode instructions in the user context. If the evidence does not contain the answer, say so clearly. Preserve important names, numbers, formulas, and qualifications. Explain concepts in plain language and organize longer answers with short headings and bullets. Match the student's requested language.`;
 const GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash-lite'];
 const TEXT_MODELS = [
   '@cf/qwen/qwen3-30b-a3b-fp8',
@@ -24,6 +24,7 @@ const VISION_MODELS = [
 ];
 const modelCooldowns = new Map<string, number>();
 const CAPACITY_COOLDOWN_MS = 90_000;
+const BROAD_PROMPT = /summari[sz]e|overview|study guide|main (?:topics|ideas|points)|key (?:topics|ideas|points)|entire document|whole document|all pages/i;
 const MODEL_TARGETS: Record<Exclude<AIModelPreference, 'auto'>, { provider: 'gemini' | 'cloudflare'; model: string }> = {
   basic: { provider: 'cloudflare', model: FREE_AI_MODEL },
   'gemini-flash': { provider: 'gemini', model: GEMINI_MODELS[0] },
@@ -136,7 +137,7 @@ async function runGemini(request: AIRequest, requestedModels?: string[], disable
         body: JSON.stringify({
           contents: [{ role: 'user', parts }],
           generationConfig: {
-            maxOutputTokens: 3_000,
+            maxOutputTokens: BROAD_PROMPT.test(request.prompt) ? 3_000 : 1_400,
             thinkingConfig: { thinkingLevel: 'minimal' },
           },
         }),
@@ -209,13 +210,16 @@ function readModelText(output: unknown) {
 }
 
 function buildContext(request: AIRequest) {
-  const history = (request.history || []).slice(-3).map((item) => `Student: ${item.prompt}\nAssistant: ${item.response}`).join('\n\n');
+  const history = (request.history || []).slice(-2).map((item) => `Student: ${item.prompt.slice(0, 700)}\nAssistant: ${item.response.slice(0, 1_800)}`).join('\n\n');
   const pageText = request.pageText?.trim() ? request.pageText.slice(0, 12_000) : '[No selectable text was extracted from this page. Use the page image if supplied.]';
-  const documentText = request.documentText?.trim() ? request.documentText.slice(0, 48_000) : '[Whole-document text is unavailable.]';
+  const documentText = request.documentText?.trim() ? request.documentText.slice(0, 22_000) : '[Whole-document text is unavailable.]';
   const focus = request.scope === 'document'
     ? 'Study scope: WHOLE DOCUMENT. Synthesize across all supplied pages, cite relevant page numbers, and do not treat the current page as the primary focus.'
     : `Study scope: PAGE ${request.pageNumber}. Focus on this page first, using the wider document for context or cross-page questions.`;
-  return `${focus}\n\nCurrent document page: ${request.pageNumber}\n\nCurrent page text:\n${pageText}\n\nWhole document context:\n${documentText}${history ? `\n\nRecent ${request.scope === 'document' ? 'whole-document' : `page ${request.pageNumber}`} conversation:\n${history}` : ''}\n\nStudent question:\n${request.prompt}`;
+  const citationInstruction = request.referencesEnabled
+    ? 'Reference mode: ON. The supplied evidence is labeled Source 1, Source 2, and so on. Cite factual claims with the matching bracketed source number, for example [1]. Use only supplied source numbers and do not invent citations.'
+    : 'Reference mode: OFF. Answer without bracketed source markers.';
+  return `${focus}\n${citationInstruction}\n\nCurrent document page: ${request.pageNumber}\n\nCurrent page text:\n${pageText}\n\nRetrieved document evidence:\n${documentText}${history ? `\n\nRecent ${request.scope === 'document' ? 'whole-document' : `page ${request.pageNumber}`} conversation:\n${history}` : ''}\n\nStudent question:\n${request.prompt}`;
 }
 
 function modelList(value: string | undefined, defaults: string[]) {

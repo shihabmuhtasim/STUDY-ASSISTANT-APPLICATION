@@ -28,6 +28,7 @@ export interface CloudPreferences {
   modelPreference: AIModelPreference;
   allowFallback: boolean;
   selectedConnectionId: string | null;
+  referencesEnabled?: boolean;
 }
 
 export interface DriveConnectionState {

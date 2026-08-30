@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Bot, Check, ChevronDown, Copy, Crown, Image as ImageIcon, KeyRound, Loader2, Lock, Plus, Send, Sparkles } from 'lucide-react';
-import { AccountIdentity, AccountSummary, AIInteraction, AIModelPreference, CustomAIConnection } from '../types';
+import { Bot, Check, ChevronDown, Copy, Crown, Image as ImageIcon, KeyRound, Loader2, Lock, Plus, Quote, Send, Sparkles } from 'lucide-react';
+import { AccountIdentity, AccountSummary, AIInteraction, AIModelPreference, AISourceReference, CustomAIConnection } from '../types';
 import { AIRequestError, askAIAboutPage } from '../services/ai';
 import { askCustomAI } from '../services/customAI';
 import { v4 as uuidv4 } from 'uuid';
@@ -9,7 +9,7 @@ import { EditInsertModal } from './EditInsertModal';
 import { AIConnectionsModal } from './AIConnectionsModal';
 import { loadCloudPreferences, saveCloudPreferences } from '../services/cloudData';
 import { deleteEncryptedConnection, loadSavedConnections, saveEncryptedConnection } from '../services/connectionStore';
-import { buildQuestionDocumentContext } from '../utils/documentContext';
+import { buildQuestionContextBundle } from '../utils/documentContext';
 
 interface AIAssistantProps {
   pageNumber: number;
@@ -26,6 +26,7 @@ interface AIAssistantProps {
   onUpgrade: () => void;
   onAddInteraction: (interaction: AIInteraction) => void;
   onInsertToNotes: (text: string, questionHeader?: string) => void;
+  onReferenceSelect: (reference: AISourceReference) => void;
 }
 
 const pageQuickPrompts = ['Summarize this page', 'Explain the key ideas', 'Create 3 quiz questions'];
@@ -88,6 +89,7 @@ export function AIAssistant({
   onUpgrade,
   onAddInteraction,
   onInsertToNotes,
+  onReferenceSelect,
 }: AIAssistantProps) {
   const [prompt, setPrompt] = useState('');
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
@@ -97,6 +99,7 @@ export function AIAssistant({
   const [includeImage, setIncludeImage] = useState(false);
   const [modelPreference, setModelPreference] = useState<AIModelPreference>('auto');
   const [allowFallback, setAllowFallback] = useState(true);
+  const [referencesEnabled, setReferencesEnabled] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [connections, setConnections] = useState<CustomAIConnection[]>([]);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
@@ -122,6 +125,7 @@ export function AIAssistant({
     if (savedModel === 'custom' && selectedId) setModelPreference('custom');
     else if (savedModel && modelOptions.some((option) => option.value === savedModel)) setModelPreference(savedModel);
     setAllowFallback(window.localStorage.getItem('study-assistant-fallback') !== 'false');
+    setReferencesEnabled(window.localStorage.getItem('study-assistant-references') === 'true');
     if (account && hasProAccess) {
       Promise.all([
         (async () => {
@@ -141,6 +145,7 @@ export function AIAssistant({
           if (cloud.modelPreference === 'basic') setModelPreference('auto');
           else if (modelOptions.some((option) => option.value === cloud.modelPreference) || cloud.modelPreference === 'custom') setModelPreference(cloud.modelPreference);
           setAllowFallback(cloud.allowFallback !== false);
+          setReferencesEnabled(cloud.referencesEnabled === true);
           setSelectedConnectionId(saved.some((connection) => connection.id === cloud.selectedConnectionId) ? cloud.selectedConnectionId : saved[0]?.id || null);
         })
         .catch((loadError) => console.error('Failed to load cloud AI settings', loadError))
@@ -159,15 +164,16 @@ export function AIAssistant({
     if (!preferencesLoaded) return;
     window.localStorage.setItem('study-assistant-model', modelPreference);
     window.localStorage.setItem('study-assistant-fallback', String(allowFallback));
+    window.localStorage.setItem('study-assistant-references', String(referencesEnabled));
     if (selectedConnectionId) window.sessionStorage.setItem(SELECTED_CONNECTION_SESSION_KEY, selectedConnectionId);
     else window.sessionStorage.removeItem(SELECTED_CONNECTION_SESSION_KEY);
-    if (account) saveCloudPreferences(account.userId, { modelPreference: hasProAccess ? modelPreference : 'basic', allowFallback: hasProAccess ? allowFallback : false, selectedConnectionId: hasProAccess ? selectedConnectionId : null }).catch((saveError) => console.error('Failed to save cloud AI preferences', saveError));
-  }, [modelPreference, allowFallback, selectedConnectionId, preferencesLoaded, account?.userId, hasProAccess]);
+    if (account) saveCloudPreferences(account.userId, { modelPreference: hasProAccess ? modelPreference : 'basic', allowFallback: hasProAccess ? allowFallback : false, selectedConnectionId: hasProAccess ? selectedConnectionId : null, referencesEnabled }).catch((saveError) => console.error('Failed to save cloud AI preferences', saveError));
+  }, [modelPreference, allowFallback, referencesEnabled, selectedConnectionId, preferencesLoaded, account?.userId, hasProAccess]);
 
   useEffect(() => {
-    setIncludeImage(hasProAccess && !pageText.trim());
+    setIncludeImage(scope === 'page' && hasProAccess && !pageText.trim());
     setError(null);
-  }, [pageNumber, pageText, hasProAccess]);
+  }, [pageNumber, pageText, hasProAccess, scope]);
 
   const handleAsk = async (text: string) => {
     if (!text.trim() || isLoading || isDocumentContextLoading) return;
@@ -190,14 +196,16 @@ export function AIAssistant({
         setConnectionsOpen(true);
         throw new AIRequestError('Add or select an API connection before using your model.');
       }
+      const contextBundle = buildQuestionContextBundle(documentPages, text, pageNumber, scope, referencesEnabled);
       const request = {
         prompt: text.trim(),
         pageNumber,
         pageText,
-        documentContext: buildQuestionDocumentContext(documentPages, text, pageNumber, scope) || documentContext,
-        pageImage: includeImage ? pageImage || undefined : undefined,
+        documentContext: contextBundle.context || documentContext.slice(0, scope === 'document' ? 20_000 : 14_000),
+        pageImage: scope === 'page' && includeImage ? pageImage || undefined : undefined,
         history,
         scope,
+        referencesEnabled,
       };
       let result;
       if (modelPreference === 'custom' && activeConnection) {
@@ -222,6 +230,7 @@ export function AIAssistant({
         model: result.model,
         requestedModel: result.requestedModel,
         fallbackUsed: result.fallbackUsed,
+        references: referencesEnabled ? contextBundle.references : undefined,
       });
     } catch (requestError) {
       if (requestError instanceof AIRequestError) setError(requestError.message);
@@ -299,6 +308,19 @@ export function AIAssistant({
               <div className="flex justify-end"><div className="bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-medium max-w-[85%]">{item.prompt}</div></div>
               <div className="bg-indigo-50/70 text-indigo-950 px-4 py-3 rounded-lg text-sm border border-indigo-100 space-y-3">
                 <div className="prose prose-sm prose-slate max-w-none leading-relaxed"><Markdown>{item.response}</Markdown></div>
+                {item.references && item.references.length > 0 && (
+                  <div className="rounded-md border border-indigo-100 bg-white/80 p-2.5">
+                    <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase text-indigo-700"><Quote size={12} />Sources</div>
+                    <div className="flex flex-wrap gap-2">
+                      {item.references.map((reference) => (
+                        <button key={`${reference.number}-${reference.pageNumber}-${reference.quote.slice(0, 20)}`} type="button" onClick={() => onReferenceSelect(reference)} className="group flex max-w-full items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-left text-xs text-slate-600 hover:border-amber-300 hover:bg-amber-50 hover:text-slate-900" title={reference.quote}>
+                          <span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-indigo-600 font-bold text-white">{reference.number}</span>
+                          <span className="truncate">Page {reference.pageNumber} · {reference.quote}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {item.model && <div className="flex items-center gap-1.5 text-[11px] text-indigo-700"><Bot size={13} />Answered by {displayModel(item.model)}{item.fallbackUsed ? ' · automatic fallback' : ''}</div>}
                 <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-indigo-100">
                   <button type="button" onClick={() => setInsertModalState({ isOpen: true, promptQuestion: item.prompt, aiResponse: item.response })} className="flex items-center gap-1.5 text-xs font-medium text-indigo-700 bg-white hover:bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-indigo-200"><Plus size={14} />Insert to notes</button>
@@ -316,7 +338,7 @@ export function AIAssistant({
             <div className="flex justify-end"><div className="bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-medium max-w-[85%]">{pendingPrompt}</div></div>
             <div className="flex items-center gap-2 bg-indigo-50/70 border border-indigo-100 rounded-lg px-4 py-3 text-sm text-indigo-800">
               <Loader2 size={16} className="animate-spin text-indigo-600" />
-              <span>{scope === 'document' ? 'Thinking across the whole document…' : `Thinking about page ${pageNumber} and the document…`}</span>
+              <span>{scope === 'document' ? 'Finding the best passages and preparing an answer…' : `Thinking about page ${pageNumber} and the document…`}</span>
             </div>
           </div>
         )}
@@ -344,10 +366,13 @@ export function AIAssistant({
         </div>
         <div className="flex items-center justify-between gap-2 mb-2">
           <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-            <input type="checkbox" checked={includeImage} onChange={(event) => setIncludeImage(event.target.checked)} disabled={!hasProAccess || !pageImage} className="accent-indigo-600" />
+            <input type="checkbox" checked={includeImage} onChange={(event) => setIncludeImage(event.target.checked)} disabled={!hasProAccess || !pageImage || scope === 'document'} className="accent-indigo-600" />
             <ImageIcon size={14} />Include page image
           </label>
-          <span className="text-[11px] text-slate-400">{hasProAccess ? 'Useful for diagrams' : 'Pro visual analysis'}</span>
+          <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer" title="Add clickable sources that open and highlight the supporting PDF text">
+            <input type="checkbox" checked={referencesEnabled} onChange={(event) => setReferencesEnabled(event.target.checked)} className="accent-indigo-600" />
+            <Quote size={14} />References
+          </label>
         </div>
         <form onSubmit={(event) => { event.preventDefault(); handleAsk(prompt); }} className="relative flex items-center">
           <input

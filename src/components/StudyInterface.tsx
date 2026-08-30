@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { PDFViewer } from './PDFViewer';
 import { NotesPanel } from './NotesPanel';
 import { AIAssistant } from './AIAssistant';
-import { AccountIdentity, AccountSummary, StudyDocument, PageNote, AIInteraction, NoteBlock, AnnotationStroke } from '../types';
+import { AccountIdentity, AccountSummary, StudyDocument, PageNote, AIInteraction, NoteBlock, AnnotationStroke, AISourceReference, PDFCitationTarget } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { ArrowLeft, Download, BookOpen, GripVertical, GripHorizontal, FileText, Sparkles, LayoutGrid, Eye, Files } from 'lucide-react';
 import { get, set } from 'idb-keyval';
@@ -36,6 +36,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   const [exportProgress, setExportProgress] = useState<string | null>(null);
   const cloudSaveTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const [studyScope, setStudyScope] = useState<'page' | 'document'>('page');
+  const [citationTarget, setCitationTarget] = useState<PDFCitationTarget | null>(null);
 
   // Universal Layout Mode: 'split' (all 3 panes visible) | 'tabs' (1 pane visible with tab navigation) | 'pdf-only'
   const [layoutMode, setLayoutMode] = useState<'split' | 'tabs' | 'pdf-only'>('split');
@@ -56,7 +57,10 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   useEffect(() => {
     setPageImage(null);
     setPageText('');
+    setCitationTarget((current) => current && current.pageNumber === pageNumber ? current : null);
   }, [pageNumber]);
+
+  useEffect(() => setCitationTarget(null), [document.id]);
 
   // Load notes from IndexedDB on mount
   useEffect(() => {
@@ -201,6 +205,12 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     }
   };
 
+  const handleReferenceSelect = (reference: AISourceReference) => {
+    setCitationTarget({ ...reference, requestId: Date.now() });
+    setPageNumber(reference.pageNumber);
+    if (layoutMode === 'tabs') setActiveTab('pdf');
+  };
+
   const pdfViewerProps = {
     file: document.fileData,
     pageNumber,
@@ -213,6 +223,8 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     onDocumentContextProgress: setDocumentContextProgress,
     onDocumentLoaded: handleDocumentLoaded,
     annotations: annotations[pageNumber] || [],
+    citationTarget,
+    onCitationDismiss: () => setCitationTarget(null),
     onAnnotationsChange: (strokes: AnnotationStroke[]) => {
       setAnnotations((current) => ({ ...current, [pageNumber]: strokes }));
       const pageNote = notes[pageNumber] || {
@@ -242,6 +254,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     onUpgrade,
     onAddInteraction: handleAddInteraction,
     onInsertToNotes: handleInsertToNotes,
+    onReferenceSelect: handleReferenceSelect,
   };
 
   const handleExport = async () => {

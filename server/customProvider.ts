@@ -1,7 +1,8 @@
 import type { AIInteraction, CustomAIConnection } from '../src/types';
 
-const SYSTEM_PROMPT = `You are a careful, capable study assistant working from a supplied document. Follow the study scope stated in the user context: either prioritize the current page or synthesize the whole document. If the document does not contain the answer, say so clearly. Preserve important names, numbers, formulas, and qualifications. Explain concepts in plain language, organize longer answers with short headings and bullets, and cite page numbers when referring to evidence. Match the student's requested language.`;
+const SYSTEM_PROMPT = `You are a careful, capable study assistant working from supplied document evidence. Follow the study scope and reference-mode instructions in the user context. If the evidence does not contain the answer, say so clearly. Preserve important names, numbers, formulas, and qualifications. Explain concepts in plain language and organize longer answers with short headings and bullets. Match the student's requested language.`;
 const NVIDIA_CHAT_ENDPOINT = 'https://integrate.api.nvidia.com/v1/chat/completions';
+const BROAD_PROMPT = /summari[sz]e|overview|study guide|main (?:topics|ideas|points)|key (?:topics|ideas|points)|entire document|whole document|all pages/i;
 
 export interface CustomProviderInput {
   connection: CustomAIConnection;
@@ -10,19 +11,28 @@ export interface CustomProviderInput {
   pageText: string;
   documentContext: string;
   scope?: 'page' | 'document';
+  referencesEnabled?: boolean;
   pageImage?: string;
   history: AIInteraction[];
   testMode?: boolean;
 }
 
+function outputTokenLimit(input: CustomProviderInput) {
+  if (input.testMode) return 96;
+  return BROAD_PROMPT.test(input.prompt) ? 3_000 : 1_400;
+}
+
 function buildContext(input: CustomProviderInput) {
-  const history = input.history.slice(-3).map((item) => `Student: ${item.prompt}\nAssistant: ${item.response}`).join('\n\n');
+  const history = input.history.slice(-2).map((item) => `Student: ${item.prompt.slice(0, 700)}\nAssistant: ${item.response.slice(0, 1_800)}`).join('\n\n');
   const page = input.pageText.trim() ? input.pageText.slice(0, 12_000) : '[No selectable text was extracted from this page. Use the page image if supplied.]';
-  const document = input.documentContext.trim() ? input.documentContext.slice(0, 48_000) : '[Whole-document text is unavailable.]';
+  const document = input.documentContext.trim() ? input.documentContext.slice(0, 22_000) : '[Whole-document text is unavailable.]';
   const focus = input.scope === 'document'
     ? 'Study scope: WHOLE DOCUMENT. Synthesize across all supplied pages, cite relevant page numbers, and do not treat the current page as the primary focus.'
     : `Study scope: PAGE ${input.pageNumber}. Focus on this page first, using the wider document when useful.`;
-  return `${focus}\n\nCurrent document page: ${input.pageNumber}\n\nCurrent page text:\n${page}\n\nWhole document context:\n${document}${history ? `\n\nRecent ${input.scope === 'document' ? 'whole-document' : `page ${input.pageNumber}`} conversation:\n${history}` : ''}\n\nStudent question:\n${input.prompt}`;
+  const citationInstruction = input.referencesEnabled
+    ? 'Reference mode: ON. Cite factual claims with the matching bracketed Source number, for example [1]. Use only supplied source numbers.'
+    : 'Reference mode: OFF. Answer without bracketed source markers.';
+  return `${focus}\n${citationInstruction}\n\nCurrent document page: ${input.pageNumber}\n\nCurrent page text:\n${page}\n\nRetrieved document evidence:\n${document}${history ? `\n\nRecent ${input.scope === 'document' ? 'whole-document' : `page ${input.pageNumber}`} conversation:\n${history}` : ''}\n\nStudent question:\n${input.prompt}`;
 }
 
 async function providerFetch(url: string, init: RequestInit, timeoutMs = 60_000) {
@@ -71,7 +81,7 @@ async function openAICompatible(input: CustomProviderInput, promptContext: strin
     body: JSON.stringify({
       model: input.connection.model,
       messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: userContent }],
-      max_tokens: input.testMode ? 96 : 3_000,
+      max_tokens: outputTokenLimit(input),
       temperature: 0.2,
       stream: false,
     }),
@@ -97,7 +107,7 @@ async function nvidia(input: CustomProviderInput, promptContext: string) {
     body: JSON.stringify({
       model: input.connection.model.trim(),
       messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: promptContext }],
-      max_tokens: input.testMode ? 96 : 3_000,
+      max_tokens: outputTokenLimit(input),
       temperature: 1,
       top_p: 0.95,
       chat_template_kwargs: { thinking: false },
@@ -166,7 +176,7 @@ async function gemini(input: CustomProviderInput, promptContext: string) {
   const response = await providerFetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(input.connection.model)}:generateContent`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-goog-api-key': input.connection.apiKey },
-    body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { maxOutputTokens: 3_000 } }),
+    body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { maxOutputTokens: outputTokenLimit(input) } }),
   });
   if (!response.ok) throw new Error(await errorMessage(response));
   const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
@@ -184,7 +194,7 @@ async function anthropic(input: CustomProviderInput, promptContext: string) {
   const response = await providerFetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': input.connection.apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: input.connection.model, system: SYSTEM_PROMPT, messages: [{ role: 'user', content }], max_tokens: 3_000, temperature: 0.2 }),
+    body: JSON.stringify({ model: input.connection.model, system: SYSTEM_PROMPT, messages: [{ role: 'user', content }], max_tokens: outputTokenLimit(input), temperature: 0.2 }),
   });
   if (!response.ok) throw new Error(await errorMessage(response));
   const data = await response.json() as { content?: Array<{ type?: string; text?: string }> };

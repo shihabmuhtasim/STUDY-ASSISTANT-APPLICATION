@@ -63,6 +63,17 @@ export interface AIInteraction {
   model?: string;
   requestedModel?: AIModelPreference;
   fallbackUsed?: boolean;
+  references?: AISourceReference[];
+}
+
+export interface AISourceReference {
+  number: number;
+  pageNumber: number;
+  quote: string;
+}
+
+export interface PDFCitationTarget extends AISourceReference {
+  requestId: number;
 }
 
 export type AIModelPreference = 'auto' | 'basic' | 'gemini-flash' | 'gemini-flash-lite' | 'qwen' | 'llama' | 'gemma' | 'glm' | 'nemotron' | 'custom';

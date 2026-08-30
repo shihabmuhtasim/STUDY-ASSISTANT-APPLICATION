@@ -9,6 +9,7 @@ interface CustomAIInput {
   pageText: string;
   documentContext: string;
   scope?: 'page' | 'document';
+  referencesEnabled?: boolean;
   pageImage?: string;
   history: AIInteraction[];
   testMode?: boolean;
@@ -51,8 +52,9 @@ export async function askCustomAI(input: CustomAIInput) {
       pageText: input.pageText,
       documentContext: input.documentContext,
       scope: input.scope || 'page',
+      referencesEnabled: input.referencesEnabled === true,
       pageImage: input.pageImage,
-      history: input.history,
+      history: input.history.slice(-2).map((item) => ({ ...item, prompt: item.prompt.slice(0, 700), response: item.response.slice(0, 1_800) })),
       testMode: input.testMode === true,
     }),
   }, input.connection.service === 'nvidia' ? 120_000 : input.testMode ? 70_000 : 75_000);

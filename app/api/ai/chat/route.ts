@@ -58,12 +58,13 @@ export async function POST(request: Request) {
       prompt,
       pageNumber: body.pageNumber,
       pageText: body.pageText?.slice(0, 12_000),
-      documentText: body.documentText?.slice(0, 48_000),
+      documentText: body.documentText?.slice(0, 22_000),
       pageImage: hasProAccess ? body.pageImage : undefined,
       history: body.history?.slice(-3),
       modelPreference: hasProAccess ? body.modelPreference : 'basic',
       allowFallback: hasProAccess ? body.allowFallback : false,
       scope: body.scope === 'document' ? 'document' : 'page',
+      referencesEnabled: body.referencesEnabled === true,
     });
     await recordAIUsage({
       userId: user.uid,

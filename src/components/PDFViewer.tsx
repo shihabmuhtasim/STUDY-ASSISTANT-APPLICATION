@@ -2,9 +2,10 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { ChevronLeft, ChevronRight, Eraser, Highlighter, Loader2, PenLine, RotateCcw, Search, Trash2, Type, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react';
-import { AnnotationStroke, AnnotationTool } from '../types';
+import { AnnotationStroke, AnnotationTool, PDFCitationTarget } from '../types';
 import { AnnotationCanvas } from './AnnotationCanvas';
 import { recognizeScannedPage } from '../services/ocr';
+import { findCitationSpanRange } from '../utils/citationHighlight';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
@@ -23,9 +24,11 @@ interface PDFViewerProps {
   onDocumentLoaded: (totalPages: number) => void;
   annotations: AnnotationStroke[];
   onAnnotationsChange: (strokes: AnnotationStroke[]) => void;
+  citationTarget?: PDFCitationTarget | null;
+  onCitationDismiss?: () => void;
 }
 
-export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess, onPageTextReady, onDocumentContextReady, onDocumentPagesReady, onDocumentContextLoadingChange, onDocumentContextProgress, onDocumentLoaded, annotations, onAnnotationsChange }: PDFViewerProps) {
+export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess, onPageTextReady, onDocumentContextReady, onDocumentPagesReady, onDocumentContextLoadingChange, onDocumentContextProgress, onDocumentLoaded, annotations, onAnnotationsChange, citationTarget = null, onCitationDismiss }: PDFViewerProps) {
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [scale, setScale] = useState(1.0);
@@ -41,6 +44,8 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
   const [annotationEnabled, setAnnotationEnabled] = useState(false);
   const [annotationTool, setAnnotationTool] = useState<AnnotationTool>('pen');
   const [annotationColor, setAnnotationColor] = useState('#ef4444');
+  const [renderVersion, setRenderVersion] = useState(0);
+  const [citationHighlightStatus, setCitationHighlightStatus] = useState<'idle' | 'highlighted' | 'page-only'>('idle');
 
   const pageRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -181,7 +186,28 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
         onPageRenderSuccess(dataUrl);
       }
     }
+    setRenderVersion((version) => version + 1);
   }
+
+  useEffect(() => {
+    const root = pageRef.current;
+    root?.querySelectorAll<HTMLElement>('.study-citation-highlight').forEach((element) => element.classList.remove('study-citation-highlight'));
+    if (!citationTarget || citationTarget.pageNumber !== pageNumber || !root) {
+      setCitationHighlightStatus('idle');
+      return;
+    }
+
+    setCitationHighlightStatus('page-only');
+    const timeout = window.setTimeout(() => {
+      const spans = [...root.querySelectorAll<HTMLElement>('.react-pdf__Page__textContent span')];
+      const range = findCitationSpanRange(spans.map((span) => span.textContent || ''), citationTarget.quote);
+      if (!range) return;
+      spans.slice(range.firstSpan, range.lastSpan + 1).forEach((span) => span.classList.add('study-citation-highlight'));
+      spans[range.firstSpan]?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+      setCitationHighlightStatus('highlighted');
+    }, 180);
+    return () => window.clearTimeout(timeout);
+  }, [citationTarget, pageNumber, renderVersion, scale]);
 
   const handlePageInputSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -444,6 +470,17 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
       </div>
 
       {loadError && <div role="alert" className="px-3 py-2 bg-red-50 border-b border-red-100 text-xs text-red-700">{loadError}</div>}
+
+      {citationTarget && citationTarget.pageNumber === pageNumber && (
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950" role="status">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 font-semibold"><span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-indigo-600 text-[11px] text-white">{citationTarget.number}</span>Source on page {citationTarget.pageNumber}</div>
+            <p className="mt-1 line-clamp-2 text-amber-900">{citationTarget.quote}</p>
+            {citationHighlightStatus === 'page-only' && <p className="mt-1 text-[11px] text-amber-700">The cited page is open. Exact line highlighting may be unavailable on scanned pages.</p>}
+          </div>
+          <button type="button" onClick={onCitationDismiss} className="shrink-0 rounded p-1 text-amber-700 hover:bg-amber-100" aria-label="Close cited source"><X size={14} /></button>
+        </div>
+      )}
 
       {/* Canvas Display Viewport with Click-and-Drag Pan */}
       <div

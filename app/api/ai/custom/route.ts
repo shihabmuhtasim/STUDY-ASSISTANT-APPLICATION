@@ -15,6 +15,7 @@ interface RequestBody {
   pageText?: string;
   documentContext?: string;
   scope?: 'page' | 'document';
+  referencesEnabled?: boolean;
   pageImage?: string;
   history?: AIInteraction[];
   testMode?: boolean;
@@ -40,8 +41,9 @@ export async function POST(request: Request) {
       prompt: body.prompt.trim(),
       pageNumber: body.pageNumber!,
       pageText: body.pageText?.slice(0, 12_000) || '',
-      documentContext: body.documentContext?.slice(0, 48_000) || '',
+      documentContext: body.documentContext?.slice(0, 22_000) || '',
       scope: body.scope === 'document' ? 'document' : 'page',
+      referencesEnabled: body.referencesEnabled === true,
       pageImage: body.pageImage,
       history: body.history?.slice(-3) || [],
       testMode: body.testMode === true,
