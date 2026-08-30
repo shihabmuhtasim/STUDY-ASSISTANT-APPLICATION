@@ -10,6 +10,7 @@ import { AIConnectionsModal } from './AIConnectionsModal';
 import { loadCloudPreferences, saveCloudPreferences } from '../services/cloudData';
 import { deleteEncryptedConnection, loadSavedConnections, saveEncryptedConnection } from '../services/connectionStore';
 import { buildQuestionContextBundle } from '../utils/documentContext';
+import { referencesUsedInAnswer } from '../utils/answerReferences';
 
 interface AIAssistantProps {
   pageNumber: number;
@@ -220,6 +221,7 @@ export function AIAssistant({
         result = await askAIAboutPage({ ...request, modelPreference, allowFallback });
       }
       if (typeof result.remaining === 'number') onRemainingChange(result.remaining, result.remainingPercent);
+      const usedReferences = referencesEnabled ? referencesUsedInAnswer(result.response, contextBundle.references) : [];
       onAddInteraction({
         id: uuidv4(),
         prompt: text.trim(),
@@ -230,10 +232,13 @@ export function AIAssistant({
         model: result.model,
         requestedModel: result.requestedModel,
         fallbackUsed: result.fallbackUsed,
-        references: referencesEnabled ? contextBundle.references : undefined,
+        references: usedReferences.length > 0 ? usedReferences : undefined,
       });
     } catch (requestError) {
-      if (requestError instanceof AIRequestError) setError(requestError.message);
+      if (requestError instanceof AIRequestError) {
+        if (typeof requestError.remaining === 'number') onRemainingChange(requestError.remaining, requestError.remainingPercent);
+        setError(requestError.message);
+      }
       else setError('The AI assistant could not answer right now. Try again.');
     } finally {
       setPendingPrompt(null);
@@ -308,11 +313,11 @@ export function AIAssistant({
               <div className="flex justify-end"><div className="bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-medium max-w-[85%]">{item.prompt}</div></div>
               <div className="bg-indigo-50/70 text-indigo-950 px-4 py-3 rounded-lg text-sm border border-indigo-100 space-y-3">
                 <div className="prose prose-sm prose-slate max-w-none leading-relaxed"><Markdown>{item.response}</Markdown></div>
-                {item.references && item.references.length > 0 && (
+                {referencesUsedInAnswer(item.response, item.references || []).length > 0 && (
                   <div className="rounded-md border border-indigo-100 bg-white/80 p-2.5">
                     <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase text-indigo-700"><Quote size={12} />Sources</div>
                     <div className="flex flex-wrap gap-2">
-                      {item.references.map((reference) => (
+                      {referencesUsedInAnswer(item.response, item.references || []).map((reference) => (
                         <button key={`${reference.number}-${reference.pageNumber}-${reference.quote.slice(0, 20)}`} type="button" onClick={() => onReferenceSelect(reference)} className="group flex max-w-full items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-left text-xs text-slate-600 hover:border-amber-300 hover:bg-amber-50 hover:text-slate-900" title={reference.quote}>
                           <span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-indigo-600 font-bold text-white">{reference.number}</span>
                           <span className="truncate">Page {reference.pageNumber} · {reference.quote}</span>

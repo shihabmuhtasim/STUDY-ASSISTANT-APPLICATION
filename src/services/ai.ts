@@ -2,7 +2,7 @@ import type { AIInteraction, AIModelPreference } from '../types';
 import { firebaseAuth } from './auth';
 
 export class AIRequestError extends Error {
-  constructor(message: string, public code?: string, public status?: number) {
+  constructor(message: string, public code?: string, public status?: number, public remaining?: number, public remainingPercent?: number) {
     super(message);
   }
 }
@@ -55,7 +55,7 @@ export async function askAIAboutPage(input: {
   };
 
   if (!response.ok || !data.response) {
-    throw new AIRequestError(data.error || 'The AI assistant could not answer right now.', data.code, response.status);
+    throw new AIRequestError(data.error || 'The AI assistant could not answer right now.', data.code, response.status, data.remaining, data.remainingPercent);
   }
   return { response: data.response, remaining: data.remaining, remainingPercent: data.remainingPercent, usageCharged: data.usageCharged, provider: data.provider, model: data.model, requestedModel: data.requestedModel, fallbackUsed: data.fallbackUsed };
 }

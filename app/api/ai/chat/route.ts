@@ -48,8 +48,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       error: 'Your AI usage is at 0% for this month. It resets automatically next month.',
       code: 'AI_LIMIT_REACHED',
-      remaining: 0,
-      remainingPercent: 0,
+      remaining: allowance.remaining,
+      remainingPercent: remainingPercentage(allowance.account.aiLimit, allowance.remaining),
     }, { status: 429 });
   }
 

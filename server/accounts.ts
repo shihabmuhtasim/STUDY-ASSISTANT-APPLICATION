@@ -81,6 +81,9 @@ export async function getAccountSummary(user: VerifiedFirebaseUser) {
 
 export async function reserveAIAllowance(user: VerifiedFirebaseUser, units: number) {
   const account = await getAccountSummary(user);
+  if (account.role === 'admin') {
+    return { allowed: true, account, reservedUnits: 0, remaining: account.aiRemaining };
+  }
   const reservedUnits = Math.max(1, Math.min(Math.ceil(units), account.aiRemaining));
   const result = await env.DB.prepare(`
     INSERT INTO ai_usage_counters (user_id, period, used, updated_at)
@@ -113,11 +116,12 @@ export async function settleAIAllowance(userId: string, reservedUnits: number, a
 }
 
 export async function releaseAIAllowance(userId: string, reservedUnits: number) {
+  if (reservedUnits <= 0) return;
   await env.DB.prepare(`
     UPDATE ai_usage_counters
     SET used = MAX(0, used - ?), updated_at = ?
     WHERE user_id = ? AND period = ?
-  `).bind(Math.max(1, Math.ceil(reservedUnits)), Date.now(), userId, usagePeriod()).run();
+  `).bind(Math.ceil(reservedUnits), Date.now(), userId, usagePeriod()).run();
 }
 
 export async function recordAIUsage(input: {
