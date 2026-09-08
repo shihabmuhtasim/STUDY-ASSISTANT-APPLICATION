@@ -106,7 +106,7 @@ export function AdminDashboard() {
 
   if (loading && !overview) return <AdminShell><div className="grid min-h-[55vh] place-items-center text-sm font-medium text-slate-500"><RefreshCw className="mb-3 animate-spin" />Loading administrator workspace...</div></AdminShell>;
 
-  if (!overview) return <AdminShell><div className="mx-auto mt-24 max-w-lg rounded-lg border border-slate-200 bg-white p-8 text-center shadow-sm"><ShieldCheck className="mx-auto mb-4 text-indigo-600" size={34} /><h1 className="text-xl font-semibold text-slate-950">Administrator access</h1><p className="mt-2 text-sm leading-6 text-slate-600">{error}</p><a href="/" className="mt-6 inline-flex rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white">Return to Clarivo</a></div></AdminShell>;
+  if (!overview) return <AdminShell><div className="mx-auto mt-24 max-w-lg rounded-lg border border-slate-200 bg-white p-8 text-center shadow-sm"><ShieldCheck className="mx-auto mb-4 text-indigo-600" size={34} /><h1 className="text-xl font-semibold text-slate-950">Administrator access</h1><p className="mt-2 text-sm leading-6 text-slate-600">{error}</p><a href="/" className="mt-6 inline-flex rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white">Return to NoteMyDoc AI</a></div></AdminShell>;
 
   const metrics = [
     { label: 'Registered users', value: overview.summary.users, note: `${overview.summary.freeUsers} Free · ${overview.summary.proUsers} Pro`, icon: Users },
@@ -118,7 +118,7 @@ export function AdminDashboard() {
   return <AdminShell>
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div><p className="text-xs font-semibold uppercase text-indigo-600">Operations</p><h1 className="mt-1 text-2xl font-semibold text-slate-950">Clarivo admin</h1><p className="mt-1 text-sm text-slate-500">Users, AI reliability, access, and safety controls.</p></div>
+        <div><p className="text-xs font-semibold uppercase text-indigo-600">Operations</p><h1 className="mt-1 text-2xl font-semibold text-slate-950">NoteMyDoc AI admin</h1><p className="mt-1 text-sm text-slate-500">Users, AI reliability, access, and safety controls.</p></div>
         <button type="button" onClick={load} disabled={loading} className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} />Refresh</button>
       </div>
 
@@ -155,5 +155,5 @@ export function AdminDashboard() {
 }
 
 function AdminShell({ children }: { children: React.ReactNode }) {
-  return <div className="min-h-screen bg-slate-50"><header className="border-b border-slate-200 bg-white"><div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6"><a href="/" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-slate-950"><ArrowLeft size={17} />Clarivo</a><div className="flex items-center gap-2 text-sm font-semibold text-slate-900"><ShieldCheck size={18} className="text-indigo-600" />Admin</div></div></header>{children}</div>;
+  return <div className="min-h-screen bg-slate-50"><header className="border-b border-slate-200 bg-white"><div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6"><a href="/" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-slate-950"><ArrowLeft size={17} />NoteMyDoc AI</a><div className="flex items-center gap-2 text-sm font-semibold text-slate-900"><ShieldCheck size={18} className="text-indigo-600" />Admin</div></div></header>{children}</div>;
 }

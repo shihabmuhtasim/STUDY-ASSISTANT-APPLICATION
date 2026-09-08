@@ -82,28 +82,59 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
   };
 
   return (
-    <main className="min-h-screen bg-[#f7f7f5]">
-      <section className="border-b border-black/10 bg-[#fcfcfa]">
-        <div className="mx-auto max-w-6xl px-4 py-9 sm:px-6 sm:py-12">
-          <div className="grid items-end gap-8 lg:grid-cols-[minmax(0,1fr)_390px]">
+    <main className="library-page min-h-screen">
+      <section className="library-hero border-b border-black/10">
+        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-16">
+          <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
             <div className="max-w-3xl">
-              <div className="flex items-center gap-2 text-xs font-semibold text-indigo-700"><Sparkles size={15} />AI that studies at your pace</div>
-              <h1 className="mt-4 max-w-2xl text-3xl font-semibold leading-tight text-[#171717] sm:text-5xl">Study every page. Keep every insight.</h1>
-              <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">Clarivo reads the document with you, one page at a time. Ask focused questions, keep unlimited notes beside the source, and stay organized without losing the context of the full document.</p>
+              <div className="flex items-center gap-2 text-xs font-semibold text-indigo-700"><Sparkles size={15} />THE AI STUDY WORKSPACE FOR DOCUMENTS</div>
+              <h1 className="mt-5 max-w-3xl text-4xl font-semibold leading-[1.08] text-[#171717] sm:text-6xl">Study documents page by page. Understand them as a whole.</h1>
+              <p className="mt-5 max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">NoteMyDoc AI keeps every question, explanation, and note connected to the exact page you are reading, while the AI retains the wider document context.</p>
+              <p className="mt-6 text-sm font-semibold text-[#171717]">Chat with every page. Keep every note.</p>
             </div>
-            <div className="grid grid-cols-1 divide-y divide-black/10 border-y border-black/10 sm:grid-cols-3 sm:divide-x sm:divide-y-0 lg:grid-cols-1 lg:divide-x-0 lg:divide-y">
-              <div className="flex items-center gap-2.5 px-1 py-3 text-xs font-medium text-slate-700 sm:px-3 lg:px-0"><BookOpenCheck size={17} className="shrink-0 text-indigo-600" /><span>Read one page</span></div>
-              <div className="flex items-center gap-2.5 px-1 py-3 text-xs font-medium text-slate-700 sm:px-3 lg:px-0"><MessageSquareText size={17} className="shrink-0 text-violet-600" /><span>Ask with context</span></div>
-              <div className="flex items-center gap-2.5 px-1 py-3 text-xs font-medium text-slate-700 sm:px-3 lg:px-0"><NotebookPen size={17} className="shrink-0 text-emerald-600" /><span>Organize every note</span></div>
+
+            <div className="product-preview overflow-hidden rounded-lg border border-slate-800 bg-[#111317] text-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 text-xs text-slate-300">
+                <span className="font-semibold text-white">Document workspace</span>
+                <span>Page 12 of 48</span>
+              </div>
+              <div className="grid min-h-[300px] grid-cols-[0.84fr_1.16fr]">
+                <div className="border-r border-white/10 bg-white p-4 text-slate-900">
+                  <p className="text-[10px] font-semibold uppercase text-slate-400">Lecture 04</p>
+                  <h2 className="mt-8 text-base font-semibold leading-snug">Convolutional neural networks</h2>
+                  <div className="mt-5 h-1.5 w-24 rounded bg-slate-200" />
+                  <div className="mt-2 h-1.5 w-full rounded bg-slate-100" />
+                  <div className="mt-2 h-1.5 w-4/5 rounded bg-slate-100" />
+                </div>
+                <div className="flex flex-col justify-between p-4">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase text-indigo-300">AI page assistant</p>
+                    <div className="mt-4 rounded-md border border-white/10 bg-white/5 p-3 text-xs leading-5 text-slate-200">Explain max pooling in simpler terms.</div>
+                    <div className="mt-3 rounded-md bg-white p-3 text-xs leading-5 text-slate-800">Max pooling keeps the strongest signal from each small area, making the network faster while preserving the most useful features.</div>
+                  </div>
+                  <div className="mt-5 flex flex-wrap gap-2 text-[10px] font-medium">
+                    <span className="rounded border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-emerald-200">Note saved to page 12</span>
+                    <span className="rounded border border-indigo-400/30 bg-indigo-400/10 px-2 py-1 text-indigo-200">Whole-document context on</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="specialty-band border-b border-black/10">
+        <div className="mx-auto grid max-w-6xl divide-y divide-black/10 px-4 sm:px-6 md:grid-cols-3 md:divide-x md:divide-y-0">
+          <div className="py-7 md:pr-7"><BookOpenCheck size={21} className="text-indigo-600" /><h2 className="mt-4 text-xl font-semibold text-[#171717]">Focus on the page.</h2><p className="mt-2 text-sm leading-6 text-slate-600">Ask for summaries, explanations, translations, or quizzes about exactly what is in front of you.</p></div>
+          <div className="py-7 md:px-7"><MessageSquareText size={21} className="text-violet-600" /><h2 className="mt-4 text-xl font-semibold text-[#171717]">Ask with full context.</h2><p className="mt-2 text-sm leading-6 text-slate-600">The AI understands the wider document whenever your question depends on another page or topic.</p></div>
+          <div className="py-7 md:pl-7"><NotebookPen size={21} className="text-emerald-600" /><h2 className="mt-4 text-xl font-semibold text-[#171717]">Keep notes connected.</h2><p className="mt-2 text-sm leading-6 text-slate-600">Write freely, insert AI answers, and keep every note organized beside the page that inspired it.</p></div>
         </div>
       </section>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
 
         {account && (
-          <div className="mb-5 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="library-panel mb-5 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
               <span className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg ${driveConnected ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{driveConnected ? <Cloud size={18} /> : <CloudOff size={18} />}</span>
               <div><p className="text-sm font-semibold text-slate-900">Optional Google Drive sync</p><p className="mt-0.5 text-xs text-slate-500">{driveConnected ? 'Connected. New documents synchronize automatically.' : driveLinked ? 'Linked to your account. Local documents remain available; resume cloud sync when needed.' : 'Your documents work locally without Drive. Connect it only for cloud backup and access across devices.'}</p></div>
@@ -128,13 +159,13 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
         )}
 
         <section
-          className={`rounded-lg border p-7 text-center transition-colors sm:p-9 ${isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-black/10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)]'}`}
+          className={`library-panel rounded-lg border p-7 text-center transition-colors sm:p-9 ${isDragging ? 'border-indigo-500 bg-indigo-50' : 'border-black/10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)]'}`}
           onDragOver={(event) => { event.preventDefault(); setIsDragging(true); }}
           onDragLeave={() => setIsDragging(false)}
           onDrop={(event) => { event.preventDefault(); setIsDragging(false); const file = event.dataTransfer.files?.[0]; if (file) processFile(file); }}
         >
           <span className="mx-auto grid h-12 w-12 place-items-center rounded-lg bg-[#171717] text-white"><Upload size={22} /></span>
-          <h2 className="mt-3 text-lg font-semibold text-[#171717]">Bring in your next study document</h2>
+          <h2 className="mt-3 text-lg font-semibold text-[#171717]">Bring in your next document</h2>
           <p className="mt-1 text-sm text-slate-500">Drop it here or browse PDF, Word, text, Markdown, HTML, RTF, and CSV files.</p>
           <button type="button" disabled={isImporting} onClick={() => !account ? onRequireAuth() : fileInputRef.current?.click()} className="mt-5 inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 text-sm disabled:opacity-60">
             {isImporting && <Loader2 size={15} className="animate-spin" />}
@@ -149,7 +180,7 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
           />
         </section>
 
-        <section ref={documentsRef} id="clarivo-library" className="mt-10 scroll-mt-24">
+        <section ref={documentsRef} id="notemydoc-library" className="mt-10 scroll-mt-24">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
             <div><div className="flex items-center gap-2 text-xs font-semibold text-indigo-700"><Layers3 size={15} />YOUR WORKSPACE</div><h2 className="mt-1 text-xl font-semibold text-[#171717]">Study library <span className="text-sm font-normal text-slate-400">{documents.length}</span></h2></div>
             {documents.length > 0 && (
@@ -171,7 +202,7 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {filteredDocuments.map((document) => (
-                <article key={document.id} className="bg-white border border-slate-200 rounded-lg p-4 hover:border-slate-300 hover:shadow-sm transition group">
+                <article key={document.id} className="library-panel bg-white border border-slate-200 rounded-lg p-4 hover:border-slate-300 hover:shadow-sm transition group">
                   <div className="flex items-start gap-3">
                     <button type="button" onClick={() => onOpenDocument(document)} className="w-10 h-10 bg-emerald-50 text-emerald-700 rounded-lg grid place-items-center shrink-0 hover:bg-emerald-100" aria-label={`Open ${document.title}`}><FileText size={20} /></button>
                     <div className="min-w-0 flex-1">

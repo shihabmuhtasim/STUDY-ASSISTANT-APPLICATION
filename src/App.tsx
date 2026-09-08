@@ -31,6 +31,7 @@ interface AppProps {
 const localLibraryKey = (userId: string) => `study_documents_${userId}`;
 
 export default function App({ initialAccount }: AppProps) {
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [documents, setDocuments] = useState<StudyDocument[]>([]);
   const [documentsLoaded, setDocumentsLoaded] = useState(false);
   const [currentDocument, setCurrentDocument] = useState<StudyDocument | null>(null);
@@ -46,6 +47,27 @@ export default function App({ initialAccount }: AppProps) {
   const cloudLoadedFor = useRef<string | null>(null);
   const driveSyncedFor = useRef<string | null>(null);
   const legacyDocuments = useRef<StudyDocument[]>([]);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem('notemydoc-theme');
+    const initialTheme = saved === 'light' || saved === 'dark'
+      ? saved
+      : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    window.document.documentElement.dataset.theme = initialTheme;
+    window.document.documentElement.style.colorScheme = initialTheme;
+    window.localStorage.setItem('notemydoc-theme', initialTheme);
+    setTheme(initialTheme);
+  }, []);
+
+  const handleThemeToggle = useCallback(() => {
+    setTheme((current) => {
+      const next = current === 'light' ? 'dark' : 'light';
+      window.document.documentElement.dataset.theme = next;
+      window.document.documentElement.style.colorScheme = next;
+      window.localStorage.setItem('notemydoc-theme', next);
+      return next;
+    });
+  }, []);
 
   const persistLocalDocuments = useCallback(async (userId: string, nextDocuments: StudyDocument[]) => {
     await setStored(localLibraryKey(userId), nextDocuments);
@@ -292,7 +314,7 @@ export default function App({ initialAccount }: AppProps) {
     }
     if (!driveLinked) {
       const confirmed = window.confirm(
-        'Connect Google Drive and synchronize your Clarivo library? Existing documents in this browser will be uploaded to your own Google Drive account.',
+        'Connect Google Drive and synchronize your NoteMyDoc AI library? Existing documents in this browser will be uploaded to your own Google Drive account.',
       );
       if (!confirmed) return;
     }
@@ -316,7 +338,7 @@ export default function App({ initialAccount }: AppProps) {
 
   const handleDisconnectDrive = async () => {
     if (!account || !driveLinked || driveBusy) return;
-    if (!window.confirm('Disconnect Google Drive from this Clarivo account? Your files will remain in Google Drive.')) return;
+    if (!window.confirm('Disconnect Google Drive from this NoteMyDoc AI account? Your files will remain in Google Drive.')) return;
     clearDriveSession();
     setDriveToken(null);
     setDriveLinked(false);
@@ -337,9 +359,11 @@ export default function App({ initialAccount }: AppProps) {
 
   return (
     <AppErrorBoundary>
-      <div className={`${currentDocument ? 'h-screen overflow-hidden' : 'min-h-screen'} flex flex-col bg-[#f7f7f5] font-sans text-slate-900`}>
+      <div className={`${currentDocument ? 'h-screen overflow-hidden' : 'min-h-screen'} app-shell flex flex-col font-sans text-slate-900`}>
       <SiteNavigation
         account={account}
+        theme={theme}
+        onThemeToggle={handleThemeToggle}
         isLibraryActive={!currentDocument}
         onLibrary={handleOpenLibrary}
         onPlans={() => setInfoView('plans')}

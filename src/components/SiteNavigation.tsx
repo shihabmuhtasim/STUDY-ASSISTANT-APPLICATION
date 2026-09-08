@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { BookOpenCheck, ChevronDown, CircleUserRound, FolderOpen, LogIn, LogOut, Mail, Menu, ShieldCheck, Sparkles, Tag, X } from 'lucide-react';
+import { BookOpenCheck, ChevronDown, CircleUserRound, FolderOpen, LogIn, LogOut, Mail, Menu, Moon, ShieldCheck, Sparkles, Sun, Tag, X } from 'lucide-react';
 import type { AccountIdentity, AccountSummary } from '../types';
 
 interface SiteNavigationProps {
   account: AccountIdentity | AccountSummary | null;
+  theme: 'light' | 'dark';
+  onThemeToggle: () => void;
   isLibraryActive: boolean;
   onLibrary: () => void;
   onPlans: () => void;
@@ -12,7 +14,7 @@ interface SiteNavigationProps {
   onSignOut: () => void;
 }
 
-export function SiteNavigation({ account, isLibraryActive, onLibrary, onPlans, onContact, onAuth, onSignOut }: SiteNavigationProps) {
+export function SiteNavigation({ account, theme, onThemeToggle, isLibraryActive, onLibrary, onPlans, onContact, onAuth, onSignOut }: SiteNavigationProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const accessLabel = account && 'role' in account && account.role === 'admin'
@@ -28,11 +30,11 @@ export function SiteNavigation({ account, isLibraryActive, onLibrary, onPlans, o
   };
 
   return (
-    <header className="relative z-50 shrink-0 border-b border-black/10 bg-white/90 backdrop-blur-xl">
-      <div className="mx-auto flex h-[68px] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
-        <button type="button" onClick={onLibrary} className="group flex min-w-0 items-center gap-3 text-left" aria-label="Open Clarivo library">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#171717] text-white shadow-sm transition group-hover:bg-indigo-600"><BookOpenCheck size={20} /></span>
-          <span className="min-w-0"><span className="block truncate text-[17px] font-semibold text-[#171717]">Clarivo</span><span className="block truncate text-[11px] font-medium text-slate-500">Page-by-page AI study</span></span>
+    <header className="site-navigation relative z-50 shrink-0 border-b border-black/10 bg-white/90 backdrop-blur-xl">
+      <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
+        <button type="button" onClick={onLibrary} className="group flex min-w-0 items-center gap-3 text-left" aria-label="Open NoteMyDoc AI library">
+          <span className="brand-mark grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#171717] text-white shadow-sm transition group-hover:bg-indigo-600"><BookOpenCheck size={20} /></span>
+          <span className="min-w-0"><span className="block truncate text-[17px] font-semibold text-[#171717]">NoteMyDoc AI</span><span className="block truncate text-[11px] font-medium text-slate-500">Chat with every page. Keep every note.</span></span>
         </button>
 
         <nav className="hidden items-center gap-1 md:flex" aria-label="Main navigation">
@@ -42,6 +44,9 @@ export function SiteNavigation({ account, isLibraryActive, onLibrary, onPlans, o
         </nav>
 
         <div className="hidden items-center gap-2 md:flex">
+          <button type="button" onClick={onThemeToggle} className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-950" aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`} title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>
+            {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+          </button>
           {account ? (
             <div className="relative">
               <button type="button" onClick={() => setAccountOpen((value) => !value)} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:border-slate-300" aria-expanded={accountOpen}>
@@ -72,10 +77,13 @@ export function SiteNavigation({ account, isLibraryActive, onLibrary, onPlans, o
           )}
         </div>
 
-        <button type="button" onClick={() => setMenuOpen((value) => !value)} className="rounded-md p-2 text-slate-600 hover:bg-slate-100 md:hidden" aria-label={menuOpen ? 'Close navigation' : 'Open navigation'}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
+        <div className="flex items-center gap-1 md:hidden">
+          <button type="button" onClick={onThemeToggle} className="grid h-9 w-9 place-items-center rounded-md text-slate-600 hover:bg-slate-100" aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`} title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>{theme === 'light' ? <Moon size={19} /> : <Sun size={19} />}</button>
+          <button type="button" onClick={() => setMenuOpen((value) => !value)} className="rounded-md p-2 text-slate-600 hover:bg-slate-100" aria-label={menuOpen ? 'Close navigation' : 'Open navigation'}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
+        </div>
       </div>
 
-      {menuOpen && <nav className="absolute inset-x-0 top-[68px] border-b border-slate-200 bg-white p-3 shadow-xl md:hidden" aria-label="Mobile navigation">
+      {menuOpen && <nav className="absolute inset-x-0 top-[72px] border-b border-slate-200 bg-white p-3 shadow-xl md:hidden" aria-label="Mobile navigation">
         <button type="button" onClick={() => run(onLibrary)} className="block w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">Library</button>
         <button type="button" onClick={() => run(onPlans)} className="block w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">Plans</button>
         <button type="button" onClick={() => run(onContact)} className="block w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">Contact</button>

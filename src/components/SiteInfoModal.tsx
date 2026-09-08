@@ -37,9 +37,9 @@ export function SiteInfoModal({ view, onClose }: SiteInfoModalProps) {
         ) : (
           <div className="p-5 sm:p-7">
             <p className="text-2xl font-semibold text-slate-950">Shihab Mohtasim</p>
-            <p className="mt-1 text-sm text-slate-500">Founder of Clarivo</p>
+            <p className="mt-1 text-sm text-slate-500">Founder of NoteMyDoc AI</p>
             <a href="mailto:shihabmuhtasim.cs@gmail.com" className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-indigo-700 hover:text-indigo-900"><Mail size={17} />shihabmuhtasim.cs@gmail.com</a>
-            <div className="mt-7 border-t border-slate-200 pt-6"><div className="flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-amber-50 text-amber-700"><Megaphone size={20} /></span><div><h3 className="font-semibold text-slate-900">Advertising and partnerships</h3><p className="mt-1 max-w-xl text-sm leading-relaxed text-slate-600">We are open to relevant advertising, education partnerships, and product collaborations that provide genuine value to students.</p><a href="mailto:shihabmuhtasim.cs@gmail.com?subject=Clarivo%20advertising%20or%20partnership" className="mt-4 inline-flex rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Discuss an opportunity</a></div></div></div>
+            <div className="mt-7 border-t border-slate-200 pt-6"><div className="flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-amber-50 text-amber-700"><Megaphone size={20} /></span><div><h3 className="font-semibold text-slate-900">Advertising and partnerships</h3><p className="mt-1 max-w-xl text-sm leading-relaxed text-slate-600">We are open to relevant advertising, education partnerships, and product collaborations that provide genuine value to students.</p><a href="mailto:shihabmuhtasim.cs@gmail.com?subject=NoteMyDoc%20AI%20advertising%20or%20partnership" className="mt-4 inline-flex rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Discuss an opportunity</a></div></div></div>
           </div>
         )}
       </div>
