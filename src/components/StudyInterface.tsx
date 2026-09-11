@@ -4,7 +4,7 @@ import { NotesPanel } from './NotesPanel';
 import { AIAssistant } from './AIAssistant';
 import { AccountIdentity, AccountSummary, StudyDocument, PageNote, AIInteraction, NoteBlock, AnnotationStroke, AISourceReference, PDFCitationTarget } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { ArrowLeft, Download, BookOpen, GripVertical, GripHorizontal, FileText, Sparkles, LayoutGrid, Eye, Files } from 'lucide-react';
+import { ArrowLeft, Download, BookOpen, GripVertical, GripHorizontal, FileText, Sparkles, LayoutGrid, Eye, Files, Maximize2, Minimize2, SlidersHorizontal } from 'lucide-react';
 import { get, set } from 'idb-keyval';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { exportStudyPackPDF } from '../utils/pdfExport';
@@ -17,10 +17,11 @@ interface StudyInterfaceProps {
   account: AccountSummary | AccountIdentity | null;
   onAccountChange: (account: AccountSummary | AccountIdentity | null) => void;
   onUpdateDocument: (document: StudyDocument) => void;
+  onStudyModeChange: (active: boolean) => void;
   onUpgrade: () => void;
 }
 
-export function StudyInterface({ document, onBack, account, onAccountChange, onUpdateDocument, onUpgrade }: StudyInterfaceProps) {
+export function StudyInterface({ document, onBack, account, onAccountChange, onUpdateDocument, onStudyModeChange, onUpgrade }: StudyInterfaceProps) {
   const [pageNumber, setPageNumber] = useState(1);
   const [pageImage, setPageImage] = useState<string | null>(null);
   const [pageText, setPageText] = useState('');
@@ -37,6 +38,8 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   const cloudSaveTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const [studyScope, setStudyScope] = useState<'page' | 'document'>('page');
   const [citationTarget, setCitationTarget] = useState<PDFCitationTarget | null>(null);
+  const [studyMode, setStudyMode] = useState(false);
+  const [studyControlsOpen, setStudyControlsOpen] = useState(false);
 
   // Universal Layout Mode: 'split' (all 3 panes visible) | 'tabs' (1 pane visible with tab navigation) | 'pdf-only'
   const [layoutMode, setLayoutMode] = useState<'split' | 'tabs' | 'pdf-only'>('split');
@@ -61,6 +64,32 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   }, [pageNumber]);
 
   useEffect(() => setCitationTarget(null), [document.id]);
+
+  useEffect(() => {
+    const syncFullscreen = () => {
+      if (studyMode && !window.document.fullscreenElement) {
+        setStudyMode(false);
+        setStudyControlsOpen(false);
+        onStudyModeChange(false);
+      }
+    };
+    window.document.addEventListener('fullscreenchange', syncFullscreen);
+    return () => window.document.removeEventListener('fullscreenchange', syncFullscreen);
+  }, [studyMode, onStudyModeChange]);
+
+  useEffect(() => () => {
+    onStudyModeChange(false);
+    if (window.document.fullscreenElement) void window.document.exitFullscreen().catch(() => undefined);
+  }, [onStudyModeChange]);
+
+  const toggleStudyMode = () => {
+    const next = !studyMode;
+    setStudyMode(next);
+    setStudyControlsOpen(false);
+    onStudyModeChange(next);
+    if (next) void window.document.documentElement.requestFullscreen?.().catch(() => undefined);
+    else if (window.document.fullscreenElement) void window.document.exitFullscreen().catch(() => undefined);
+  };
 
   // Load notes from IndexedDB on mount
   useEffect(() => {
@@ -292,9 +321,12 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-slate-50 font-sans">
+    <div className="relative flex h-full flex-col overflow-hidden bg-slate-50 font-sans">
+      {studyMode && !studyControlsOpen && (
+        <button type="button" onClick={() => setStudyControlsOpen(true)} className="absolute left-3 top-3 z-50 grid h-10 w-10 place-items-center rounded-lg border border-white/10 bg-slate-950/90 text-white shadow-lg backdrop-blur hover:bg-slate-800" title="Show study controls" aria-label="Show study controls"><SlidersHorizontal size={18} /></button>
+      )}
       {/* Top Header */}
-      <header className="flex items-center justify-between px-3 lg:px-6 py-2.5 bg-white border-b border-slate-200 shadow-2xs z-30 shrink-0 gap-2">
+      {(!studyMode || studyControlsOpen) && <header className="flex items-center justify-between px-3 lg:px-6 py-2.5 bg-white border-b border-slate-200 shadow-2xs z-30 shrink-0 gap-2">
         <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={onBack}
@@ -367,6 +399,13 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
             </button>
           </div>
 
+          {studyMode && <button type="button" onClick={() => setStudyControlsOpen(false)} className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-indigo-700" title="Hide study controls" aria-label="Hide study controls"><SlidersHorizontal size={15} /></button>}
+
+          <button type="button" onClick={toggleStudyMode} className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${studyMode ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:text-indigo-700'}`} title={studyMode ? 'Exit distraction-free Study Mode' : 'Enter distraction-free Study Mode'}>
+            {studyMode ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            <span className="hidden lg:inline">{studyMode ? 'Exit Study Mode' : 'Study Mode'}</span>
+          </button>
+
           <button
             onClick={handleExport}
             disabled={isExporting}
@@ -379,9 +418,9 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
             <span className="sm:hidden">{isExporting ? '...' : 'Export'}</span>
           </button>
         </div>
-      </header>
+      </header>}
 
-      {studyScope === 'document' && (
+      {studyScope === 'document' && (!studyMode || studyControlsOpen) && (
         <div className="flex shrink-0 items-center justify-between gap-4 border-b border-indigo-200 bg-indigo-50 px-4 py-2 text-indigo-950">
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-indigo-600 text-white"><Files size={16} /></span>
@@ -392,7 +431,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
       )}
 
       {/* Tab Selector Bar when in 'tabs' layout mode */}
-      {layoutMode === 'tabs' && (
+      {layoutMode === 'tabs' && (!studyMode || studyControlsOpen) && (
         <div className="flex items-center justify-around bg-white border-b border-slate-200 px-2 py-1.5 shrink-0 z-20 shadow-2xs">
           <button
             onClick={() => setActiveTab('pdf')}
@@ -438,7 +477,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
       )}
 
       {/* Main Workspace Body */}
-      <main className="flex-1 overflow-hidden p-2 lg:p-3 relative">
+      <main className={`flex-1 overflow-hidden relative ${studyMode ? 'p-0' : 'p-2 lg:p-3'}`}>
         {layoutMode === 'pdf-only' ? (
           /* Document Reader Full Screen */
           <div className="h-full w-full p-1">
@@ -452,7 +491,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
                 <PDFViewer {...pdfViewerProps} />
                 
                 {/* Floating Navigation Quick Bar */}
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-slate-900/90 text-white p-1.5 rounded-full shadow-lg backdrop-blur-md z-30">
+                {(!studyMode || studyControlsOpen) && <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-slate-900/90 text-white p-1.5 rounded-full shadow-lg backdrop-blur-md z-30">
                   <button
                     onClick={() => setActiveTab('ai')}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-full text-xs font-medium transition-colors"
@@ -467,7 +506,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
                     <FileText size={14} />
                     {studyScope === 'document' ? 'Whole Notes' : 'Page Notes'}
                   </button>
-                </div>
+                </div>}
               </div>
             )}
 

@@ -9,9 +9,16 @@ export interface StudyDocument {
   fileSize?: number;
   cloudStatus?: 'local' | 'syncing' | 'synced' | 'error';
   defaultNoteHeading?: string;
+  folderId?: string;
   totalPages: number;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface StudyFolder {
+  id: string;
+  name: string;
+  createdAt: number;
 }
 
 export interface NoteBlock {

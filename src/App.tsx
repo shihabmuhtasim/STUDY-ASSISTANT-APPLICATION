@@ -8,7 +8,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Library } from './components/Library';
 import dynamic from 'next/dynamic';
-import { AccountIdentity, AccountSummary, StudyDocument } from './types';
+import { AccountIdentity, AccountSummary, StudyDocument, StudyFolder } from './types';
 import { get, del, set as setStored } from 'idb-keyval';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { SiteNavigation } from './components/SiteNavigation';
@@ -16,7 +16,7 @@ import { SiteInfoModal } from './components/SiteInfoModal';
 import { AuthModal } from './components/AuthModal';
 import { accountSummaryFromFirebaseUser, signOutAccount, subscribeToAccount } from './services/auth';
 import { connectGoogleDrive } from './services/auth';
-import { deleteCloudDocument, loadCloudDocuments, loadDriveConnection, saveCloudDocument, saveDriveConnection } from './services/cloudData';
+import { deleteCloudDocument, loadCloudDocuments, loadCloudFolders, loadDriveConnection, saveCloudDocument, saveCloudFolders, saveDriveConnection } from './services/cloudData';
 import { clearDriveSession, deleteDocumentFromDrive, downloadDocumentFromDrive, loadDriveSession, saveDriveSession, uploadDocumentToDrive, validateDriveToken } from './services/googleDrive';
 
 const StudyInterface = dynamic(
@@ -29,10 +29,12 @@ interface AppProps {
 }
 
 const localLibraryKey = (userId: string) => `study_documents_${userId}`;
+const localFoldersKey = (userId: string) => `study_folders_${userId}`;
 
 export default function App({ initialAccount }: AppProps) {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [documents, setDocuments] = useState<StudyDocument[]>([]);
+  const [folders, setFolders] = useState<StudyFolder[]>([]);
   const [documentsLoaded, setDocumentsLoaded] = useState(false);
   const [currentDocument, setCurrentDocument] = useState<StudyDocument | null>(null);
   const [account, setAccount] = useState<AccountSummary | AccountIdentity | null>(initialAccount);
@@ -44,6 +46,7 @@ export default function App({ initialAccount }: AppProps) {
   const [driveBusy, setDriveBusy] = useState(false);
   const [cloudMessage, setCloudMessage] = useState<string | null>(null);
   const [libraryFocusRequest, setLibraryFocusRequest] = useState(0);
+  const [studyMode, setStudyMode] = useState(false);
   const cloudLoadedFor = useRef<string | null>(null);
   const driveSyncedFor = useRef<string | null>(null);
   const legacyDocuments = useRef<StudyDocument[]>([]);
@@ -72,6 +75,11 @@ export default function App({ initialAccount }: AppProps) {
   const persistLocalDocuments = useCallback(async (userId: string, nextDocuments: StudyDocument[]) => {
     await setStored(localLibraryKey(userId), nextDocuments);
     legacyDocuments.current = nextDocuments;
+  }, []);
+
+  const persistFolders = useCallback(async (userId: string, nextFolders: StudyFolder[]) => {
+    await setStored(localFoldersKey(userId), nextFolders);
+    await saveCloudFolders(userId, nextFolders);
   }, []);
 
   useEffect(() => {
@@ -110,6 +118,35 @@ export default function App({ initialAccount }: AppProps) {
       }
     }
     loadDocs();
+    return () => { cancelled = true; };
+  }, [account?.userId]);
+
+  useEffect(() => {
+    const userId = account?.userId;
+    let cancelled = false;
+    if (!userId) {
+      setFolders([]);
+      return;
+    }
+    async function loadFolders() {
+      let localFolders: StudyFolder[] = [];
+      try {
+        const saved = await get(localFoldersKey(userId!));
+        localFolders = Array.isArray(saved) ? saved as StudyFolder[] : [];
+        if (!cancelled) setFolders(localFolders);
+        const cloudFolders = await loadCloudFolders(userId!);
+        const merged = new Map(localFolders.map((folder) => [folder.id, folder]));
+        cloudFolders.forEach((folder) => merged.set(folder.id, folder));
+        const next = [...merged.values()].sort((a, b) => a.createdAt - b.createdAt);
+        if (!cancelled) setFolders(next);
+        await setStored(localFoldersKey(userId!), next);
+        await saveCloudFolders(userId!, next);
+      } catch (error) {
+        console.error('Failed to synchronize study folders', error);
+        if (!cancelled) setFolders(localFolders);
+      }
+    }
+    loadFolders();
     return () => { cancelled = true; };
   }, [account?.userId]);
 
@@ -302,6 +339,37 @@ export default function App({ initialAccount }: AppProps) {
     }
   };
 
+  const handleCreateFolder = async (name: string) => {
+    if (!account) return;
+    const normalized = name.trim();
+    if (!normalized || folders.some((folder) => folder.name.toLowerCase() === normalized.toLowerCase())) return;
+    const next = [...folders, { id: crypto.randomUUID(), name: normalized, createdAt: Date.now() }];
+    setFolders(next);
+    await persistFolders(account.userId, next);
+  };
+
+  const handleRenameFolder = async (id: string, name: string) => {
+    if (!account) return;
+    const normalized = name.trim();
+    if (!normalized || folders.some((folder) => folder.id !== id && folder.name.toLowerCase() === normalized.toLowerCase())) return;
+    const next = folders.map((folder) => folder.id === id ? { ...folder, name: normalized } : folder);
+    setFolders(next);
+    await persistFolders(account.userId, next);
+  };
+
+  const handleDeleteFolder = async (id: string) => {
+    if (!account) return;
+    const nextFolders = folders.filter((folder) => folder.id !== id);
+    const nextDocuments = documents.map((item) => item.folderId === id ? { ...item, folderId: undefined, updatedAt: Date.now() } : item);
+    setFolders(nextFolders);
+    setDocuments(nextDocuments);
+    await Promise.all([
+      persistFolders(account.userId, nextFolders),
+      persistLocalDocuments(account.userId, nextDocuments),
+      ...nextDocuments.filter((item, index) => item !== documents[index]).map((item) => saveCloudDocument(account.userId, item)),
+    ]);
+  };
+
   const handleConnectDrive = async () => {
     if (!account || driveBusy) return;
     if (driveToken) {
@@ -351,6 +419,7 @@ export default function App({ initialAccount }: AppProps) {
   };
 
   const handleOpenLibrary = useCallback(() => {
+    setStudyMode(false);
     setCurrentDocument(null);
     setInfoView(null);
     setAuthOpen(false);
@@ -360,7 +429,7 @@ export default function App({ initialAccount }: AppProps) {
   return (
     <AppErrorBoundary>
       <div className={`${currentDocument ? 'h-screen overflow-hidden' : 'min-h-screen'} app-shell flex flex-col font-sans text-slate-900`}>
-      <SiteNavigation
+      {!studyMode && <SiteNavigation
         account={account}
         theme={theme}
         onThemeToggle={handleThemeToggle}
@@ -369,8 +438,8 @@ export default function App({ initialAccount }: AppProps) {
         onPlans={() => setInfoView('plans')}
         onContact={() => setInfoView('contact')}
         onAuth={() => setAuthOpen(true)}
-        onSignOut={() => { signOutAccount().catch(() => undefined); clearDriveSession(); setAccount(null); setDocuments([]); setDriveToken(null); setDriveLinked(false); cloudLoadedFor.current = null; driveSyncedFor.current = null; }}
-      />
+        onSignOut={() => { signOutAccount().catch(() => undefined); clearDriveSession(); setAccount(null); setDocuments([]); setFolders([]); setDriveToken(null); setDriveLinked(false); cloudLoadedFor.current = null; driveSyncedFor.current = null; }}
+      />}
       {storageError && (
         <div role="alert" className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center text-sm text-amber-900">
           {storageError}
@@ -385,15 +454,20 @@ export default function App({ initialAccount }: AppProps) {
           account={account}
           onAccountChange={setAccount}
           onUpdateDocument={handleUpdateDocument}
+          onStudyModeChange={setStudyMode}
           onUpgrade={() => setInfoView('plans')}
         />
       ) : (
         <Library
           documents={documents}
+          folders={folders}
           onOpenDocument={setCurrentDocument}
           onAddDocument={handleAddDocument}
           onDeleteDocument={handleDeleteDocument}
           onUpdateDocument={handleUpdateDocument}
+          onCreateFolder={handleCreateFolder}
+          onRenameFolder={handleRenameFolder}
+          onDeleteFolder={handleDeleteFolder}
           account={account}
           onRequireAuth={() => setAuthOpen(true)}
           driveConnected={Boolean(driveToken)}

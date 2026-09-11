@@ -51,6 +51,11 @@ export interface DocumentContextBundle {
   references: AISourceReference[];
 }
 
+export interface ManualPageRange {
+  start: number;
+  end: number;
+}
+
 export function buildQuestionContextBundle(
   pages: string[],
   question: string,
@@ -58,27 +63,36 @@ export function buildQuestionContextBundle(
   scope: 'page' | 'document',
   includeReferences = false,
   maxCharacters = scope === 'document' ? 20_000 : 14_000,
+  manualPageRange?: ManualPageRange,
 ): DocumentContextBundle {
   if (pages.length === 0) return { context: '', references: [] };
+  const rangeStart = Math.max(1, Math.min(pages.length, Math.floor(manualPageRange?.start || 1)));
+  const rangeEnd = Math.max(rangeStart, Math.min(pages.length, Math.floor(manualPageRange?.end || pages.length)));
+  const eligiblePageIndexes = pages
+    .map((_, index) => index)
+    .filter((index) => !manualPageRange || (index >= rangeStart - 1 && index <= rangeEnd - 1));
+  const eligibleSet = new Set(eligiblePageIndexes);
   const terms = new Set(words(question));
   const broad = BROAD_QUESTION.test(question) || terms.size === 0;
-  const coverageCount = scope === 'document' ? Math.min(24, pages.length) : Math.min(10, pages.length);
-  const pageCandidates = pages.flatMap((text, pageIndex) => passages(text).map((quote, passageIndex) => ({
+  const coverageCount = scope === 'document' ? Math.min(24, eligiblePageIndexes.length) : Math.min(10, eligiblePageIndexes.length);
+  const pageCandidates = pages.flatMap((text, pageIndex) => eligibleSet.has(pageIndex) ? passages(text).map((quote, passageIndex) => ({
     pageIndex,
     passageIndex,
     quote,
     score: relevance(quote, terms) + (scope === 'page' && pageIndex === currentPage - 1 ? 500 : 0),
-  })));
+  })) : []);
   pageCandidates.sort((a, b) => b.score - a.score || a.pageIndex - b.pageIndex || a.passageIndex - b.passageIndex);
 
+  const coveragePages = evenlySpacedPages(eligiblePageIndexes.length, coverageCount).map((index) => eligiblePageIndexes[index]);
+  const includeCurrentPage = scope === 'page' && eligibleSet.has(Math.max(0, currentPage - 1));
   const selected = broad
-    ? [...new Set([...(scope === 'page' ? [Math.max(0, currentPage - 1)] : []), ...evenlySpacedPages(pages.length, coverageCount)])]
+    ? [...new Set([...(includeCurrentPage ? [Math.max(0, currentPage - 1)] : []), ...coveragePages])]
       .map((pageIndex) => pageCandidates.find((candidate) => candidate.pageIndex === pageIndex))
       .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate))
     : pageCandidates.filter((candidate) => candidate.score > 0).slice(0, scope === 'document' ? 12 : 8);
 
   if (selected.length === 0) selected.push(...pageCandidates.slice(0, Math.min(8, pageCandidates.length)));
-  if (scope === 'page' && !selected.some((item) => item.pageIndex === currentPage - 1)) {
+  if (includeCurrentPage && !selected.some((item) => item.pageIndex === currentPage - 1)) {
     const current = pageCandidates.find((candidate) => candidate.pageIndex === currentPage - 1);
     if (current) selected.unshift(current);
   }

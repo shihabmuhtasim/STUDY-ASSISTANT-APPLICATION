@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bot, Check, ChevronDown, Copy, Crown, Image as ImageIcon, KeyRound, Loader2, Lock, Plus, Quote, Send, Sparkles } from 'lucide-react';
+import { Bot, Check, ChevronDown, Copy, Crown, Image as ImageIcon, KeyRound, ListFilter, Loader2, Lock, Plus, Quote, Send, Sparkles } from 'lucide-react';
 import { AccountIdentity, AccountSummary, AIInteraction, AIModelPreference, AISourceReference, CustomAIConnection } from '../types';
 import { AIRequestError, askAIAboutPage } from '../services/ai';
 import { askCustomAI } from '../services/customAI';
@@ -113,6 +113,9 @@ export function AIAssistant({
   const [modelPreference, setModelPreference] = useState<AIModelPreference>('auto');
   const [allowFallback, setAllowFallback] = useState(true);
   const [referencesEnabled, setReferencesEnabled] = useState(false);
+  const [manualRangeEnabled, setManualRangeEnabled] = useState(false);
+  const [rangeStart, setRangeStart] = useState(1);
+  const [rangeEnd, setRangeEnd] = useState(1);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [connections, setConnections] = useState<CustomAIConnection[]>([]);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
@@ -125,6 +128,13 @@ export function AIAssistant({
   const [insertModalState, setInsertModalState] = useState({ isOpen: false, promptQuestion: '', aiResponse: '' });
   const hasProAccess = Boolean(account && 'plan' in account && account.plan === 'pro');
   const remainingPercent = account && 'aiRemainingPercent' in account ? account.aiRemainingPercent : 0;
+  const maxPage = Math.max(1, documentPages.length);
+
+  useEffect(() => {
+    if (manualRangeEnabled) return;
+    setRangeStart(Math.min(pageNumber, maxPage));
+    setRangeEnd(Math.min(maxPage, pageNumber + 2));
+  }, [manualRangeEnabled, maxPage, pageNumber]);
 
   useEffect(() => {
     const savedModel = window.localStorage.getItem('study-assistant-model') as AIModelPreference | null;
@@ -237,7 +247,10 @@ export function AIAssistant({
         setConnectionsOpen(true);
         throw new AIRequestError('Add or select an API connection before using your model.');
       }
-      const contextBundle = buildQuestionContextBundle(documentPages, text, pageNumber, scope, referencesEnabled);
+      const normalizedStart = Math.max(1, Math.min(maxPage, rangeStart));
+      const normalizedEnd = Math.max(normalizedStart, Math.min(maxPage, rangeEnd));
+      const selectedRange = manualRangeEnabled ? { start: normalizedStart, end: normalizedEnd } : undefined;
+      const contextBundle = buildQuestionContextBundle(documentPages, text, pageNumber, scope, referencesEnabled, undefined, selectedRange);
       const request = {
         prompt: text.trim(),
         pageNumber,
@@ -419,6 +432,21 @@ export function AIAssistant({
             <input type="checkbox" checked={referencesEnabled} onChange={(event) => setReferencesEnabled(event.target.checked)} className="accent-indigo-600" />
             <Quote size={14} />References
           </label>
+        </div>
+        <div className="mb-2 flex min-h-8 flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600" title="Limit AI document context to consecutive pages you choose">
+            <input type="checkbox" checked={manualRangeEnabled} onChange={(event) => setManualRangeEnabled(event.target.checked)} className="accent-indigo-600" />
+            <ListFilter size={14} />Manual page range
+          </label>
+          {manualRangeEnabled && (
+            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+              <span>Pages</span>
+              <input type="number" min={1} max={maxPage} value={rangeStart} onChange={(event) => { const next = Math.max(1, Math.min(maxPage, Number(event.target.value) || 1)); setRangeStart(next); setRangeEnd((current) => Math.max(current, next)); }} className="h-7 w-14 rounded border border-slate-200 bg-white px-1.5 text-center text-xs text-slate-700" aria-label="First context page" />
+              <span>to</span>
+              <input type="number" min={rangeStart} max={maxPage} value={rangeEnd} onChange={(event) => setRangeEnd(Math.max(rangeStart, Math.min(maxPage, Number(event.target.value) || rangeStart)))} className="h-7 w-14 rounded border border-slate-200 bg-white px-1.5 text-center text-xs text-slate-700" aria-label="Last context page" />
+              <span>of {maxPage}</span>
+            </div>
+          )}
         </div>
         <form onSubmit={(event) => { event.preventDefault(); handleAsk(prompt); }} className="relative flex items-center">
           <input

@@ -9,7 +9,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { firestore } from './auth';
-import type { AIModelPreference, AnnotationStroke, PageNote, StudyDocument } from '../types';
+import type { AIModelPreference, AnnotationStroke, PageNote, StudyDocument, StudyFolder } from '../types';
 
 export interface CloudDocumentMetadata {
   id: string;
@@ -20,6 +20,7 @@ export interface CloudDocumentMetadata {
   mimeType?: string;
   fileSize?: number;
   defaultNoteHeading?: string;
+  folderId?: string;
   totalPages: number;
   createdAt: number;
   updatedAt: number;
@@ -52,6 +53,7 @@ function documentMetadata(document: StudyDocument): CloudDocumentMetadata {
     mimeType: document.mimeType,
     fileSize: document.fileSize,
     defaultNoteHeading: document.defaultNoteHeading,
+    folderId: document.folderId,
     totalPages: document.totalPages,
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,
@@ -68,6 +70,19 @@ export async function saveCloudDocument(userId: string, document: StudyDocument)
 export async function loadCloudDocuments(userId: string) {
   const snapshot = await getDocs(collection(firestore, 'users', userId, 'documents'));
   return snapshot.docs.map((item) => item.data() as CloudDocumentMetadata);
+}
+
+export async function loadCloudFolders(userId: string): Promise<StudyFolder[]> {
+  const snapshot = await getDoc(doc(firestore, 'users', userId, 'settings', 'library'));
+  const folders = snapshot.exists() ? snapshot.data().folders : [];
+  return Array.isArray(folders) ? folders as StudyFolder[] : [];
+}
+
+export async function saveCloudFolders(userId: string, folders: StudyFolder[]) {
+  await setDoc(doc(firestore, 'users', userId, 'settings', 'library'), {
+    folders: clean(folders),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
 }
 
 export async function deleteCloudDocument(userId: string, documentId: string) {

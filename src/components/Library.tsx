@@ -1,15 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpenCheck, CheckCircle2, ChevronRight, Cloud, CloudOff, FileText, Layers3, Loader2, MessageSquareText, NotebookPen, Pencil, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
+import { BookOpenCheck, CheckCircle2, ChevronRight, Cloud, CloudOff, FileText, Folder, FolderPlus, Layers3, Loader2, MessageSquareText, NotebookPen, Pencil, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { AccountIdentity, AccountSummary, StudyDocument } from '../types';
+import { AccountIdentity, AccountSummary, StudyDocument, StudyFolder } from '../types';
 import { DOCUMENT_ACCEPT, prepareStudyFile } from '../utils/documentImport';
 
 interface LibraryProps {
   documents: StudyDocument[];
+  folders: StudyFolder[];
   onOpenDocument: (doc: StudyDocument) => void;
   onAddDocument: (doc: StudyDocument) => Promise<StudyDocument>;
   onDeleteDocument: (id: string) => void;
   onUpdateDocument: (doc: StudyDocument) => void;
+  onCreateFolder: (name: string) => Promise<void>;
+  onRenameFolder: (id: string, name: string) => Promise<void>;
+  onDeleteFolder: (id: string) => Promise<void>;
   account: AccountSummary | AccountIdentity | null;
   onRequireAuth: () => void;
   driveConnected: boolean;
@@ -21,7 +25,7 @@ interface LibraryProps {
   focusRequest: number;
 }
 
-export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocument, onUpdateDocument, account, onRequireAuth, driveConnected, driveLinked, driveBusy, cloudMessage, onConnectDrive, onDisconnectDrive, focusRequest }: LibraryProps) {
+export function Library({ documents, folders, onOpenDocument, onAddDocument, onDeleteDocument, onUpdateDocument, onCreateFolder, onRenameFolder, onDeleteFolder, account, onRequireAuth, driveConnected, driveLinked, driveBusy, cloudMessage, onConnectDrive, onDisconnectDrive, focusRequest }: LibraryProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const documentsRef = useRef<HTMLElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -30,6 +34,9 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
   const [isImporting, setIsImporting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [selectedFolderId, setSelectedFolderId] = useState<'all' | 'unfiled' | string>('all');
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
 
   useEffect(() => {
     if (focusRequest > 0) {
@@ -41,8 +48,13 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
     const normalized = query.trim().toLowerCase();
     return [...documents]
       .filter((doc) => !normalized || doc.title.toLowerCase().includes(normalized))
+      .filter((doc) => selectedFolderId === 'all' || (selectedFolderId === 'unfiled' ? !doc.folderId : doc.folderId === selectedFolderId))
       .sort((a, b) => b.updatedAt - a.updatedAt);
-  }, [documents, query]);
+  }, [documents, query, selectedFolderId]);
+
+  useEffect(() => {
+    if (selectedFolderId !== 'all' && selectedFolderId !== 'unfiled' && !folders.some((folder) => folder.id === selectedFolderId)) setSelectedFolderId('all');
+  }, [folders, selectedFolderId]);
 
   const processFile = async (file: File) => {
     if (isImporting) return;
@@ -79,6 +91,24 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
     const title = editingTitle.trim();
     if (title && title !== document.title) onUpdateDocument({ ...document, title, updatedAt: Date.now() });
     setEditingId(null);
+  };
+
+  const createFolder = async () => {
+    if (!newFolderName.trim()) return;
+    await onCreateFolder(newFolderName);
+    setNewFolderName('');
+    setCreatingFolder(false);
+  };
+
+  const moveDocument = (document: StudyDocument, folderId?: string) => {
+    onUpdateDocument({ ...document, folderId, updatedAt: Date.now() });
+  };
+
+  const dropDocument = (event: React.DragEvent, folderId?: string) => {
+    event.preventDefault();
+    const documentId = event.dataTransfer.getData('text/plain');
+    const document = documents.find((item) => item.id === documentId);
+    if (document) moveDocument(document, folderId);
   };
 
   return (
@@ -191,6 +221,25 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
             )}
           </div>
 
+          <div className="custom-scrollbar mb-5 flex items-center gap-2 overflow-x-auto pb-2">
+            <button type="button" onClick={() => setSelectedFolderId('all')} className={`flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${selectedFolderId === 'all' ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`}><Layers3 size={14} />All documents <span className="text-slate-400">{documents.length}</span></button>
+            <button type="button" onClick={() => setSelectedFolderId('unfiled')} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropDocument(event)} className={`flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${selectedFolderId === 'unfiled' ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`} title="Drop a document here to remove it from its folder"><FileText size={14} />Unfiled <span className="text-slate-400">{documents.filter((item) => !item.folderId).length}</span></button>
+            {folders.map((folder) => (
+              <div key={folder.id} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropDocument(event, folder.id)} className={`flex shrink-0 items-center rounded-md border ${selectedFolderId === folder.id ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 bg-white'}`} title="Drop a document into this folder">
+                <button type="button" onClick={() => setSelectedFolderId(folder.id)} className={`flex items-center gap-2 px-3 py-2 text-xs font-semibold ${selectedFolderId === folder.id ? 'text-indigo-700' : 'text-slate-600'}`}><Folder size={14} />{folder.name}<span className="text-slate-400">{documents.filter((item) => item.folderId === folder.id).length}</span></button>
+                <button type="button" onClick={() => { const name = window.prompt('Rename folder', folder.name); if (name) void onRenameFolder(folder.id, name); }} className="p-2 text-slate-400 hover:text-indigo-600" title={`Rename ${folder.name}`} aria-label={`Rename ${folder.name}`}><Pencil size={13} /></button>
+                <button type="button" onClick={() => { if (window.confirm(`Delete “${folder.name}”? Documents will move to Unfiled.`)) void onDeleteFolder(folder.id); }} className="p-2 text-slate-400 hover:text-red-600" title={`Delete ${folder.name}`} aria-label={`Delete ${folder.name}`}><Trash2 size={13} /></button>
+              </div>
+            ))}
+            {creatingFolder ? (
+              <form onSubmit={(event) => { event.preventDefault(); void createFolder(); }} className="flex shrink-0 items-center gap-1 rounded-md border border-indigo-300 bg-white p-1">
+                <input autoFocus value={newFolderName} onChange={(event) => setNewFolderName(event.target.value)} placeholder="Folder name" maxLength={60} className="w-36 px-2 py-1 text-xs outline-none" />
+                <button type="submit" className="rounded bg-indigo-600 px-2 py-1 text-xs font-semibold text-white">Create</button>
+                <button type="button" onClick={() => { setCreatingFolder(false); setNewFolderName(''); }} className="p-1 text-slate-400" aria-label="Cancel folder creation"><X size={14} /></button>
+              </form>
+            ) : <button type="button" onClick={() => account ? setCreatingFolder(true) : onRequireAuth()} className="flex shrink-0 items-center gap-2 rounded-md border border-dashed border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-700"><FolderPlus size={14} />New folder</button>}
+          </div>
+
           {documents.length === 0 ? (
             <div className="py-12 text-center border-t border-slate-200">
               <FileText size={28} className="mx-auto text-slate-300" />
@@ -198,11 +247,11 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
               <p className="mt-1 text-sm text-slate-500">Your uploaded documents will appear here.</p>
             </div>
           ) : filteredDocuments.length === 0 ? (
-            <div className="py-10 text-center border-t border-slate-200 text-sm text-slate-500">No documents match “{query}”.</div>
+            <div className="py-10 text-center border-t border-slate-200 text-sm text-slate-500">{query ? `No documents match “${query}”.` : 'No documents in this folder yet.'}</div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {filteredDocuments.map((document) => (
-                <article key={document.id} className="library-panel bg-white border border-slate-200 rounded-lg p-4 hover:border-slate-300 hover:shadow-sm transition group">
+                <article key={document.id} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', document.id); }} className="library-panel bg-white border border-slate-200 rounded-lg p-4 hover:border-slate-300 hover:shadow-sm transition group">
                   <div className="flex items-start gap-3">
                     <button type="button" onClick={() => onOpenDocument(document)} className="w-10 h-10 bg-emerald-50 text-emerald-700 rounded-lg grid place-items-center shrink-0 hover:bg-emerald-100" aria-label={`Open ${document.title}`}><FileText size={20} /></button>
                     <div className="min-w-0 flex-1">
@@ -223,6 +272,14 @@ export function Library({ documents, onOpenDocument, onAddDocument, onDeleteDocu
                       <button type="button" onClick={() => { if (window.confirm(`Delete “${document.title}” and its local notes?`)) onDeleteDocument(document.id); }} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="Delete" aria-label={`Delete ${document.title}`}><Trash2 size={15} /></button>
                     </div>
                   </div>
+                  <label className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+                    <Folder size={13} />
+                    <span className="sr-only">Move {document.title} to</span>
+                    <select value={document.folderId || ''} onChange={(event) => moveDocument(document, event.target.value || undefined)} className="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-600" aria-label={`Move ${document.title} to folder`}>
+                      <option value="">Unfiled</option>
+                      {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+                    </select>
+                  </label>
                   <button type="button" onClick={() => onOpenDocument(document)} className="mt-4 w-full flex items-center justify-between text-sm font-medium text-indigo-700 hover:text-indigo-900">Continue studying<ChevronRight size={16} /></button>
                 </article>
               ))}

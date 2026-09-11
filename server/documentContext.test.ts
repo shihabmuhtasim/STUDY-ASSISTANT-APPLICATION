@@ -41,3 +41,13 @@ test('whole-document summaries cover every page in a typical document', () => {
   const context = buildQuestionDocumentContext(pages, 'Summarize the whole document', 1, 'document');
   for (let page = 1; page <= pages.length; page += 1) assert.match(context, new RegExp(`\\[Page ${page}\\]`));
 });
+
+test('manual page ranges restrict evidence while preserving original page numbers', () => {
+  const pages = Array.from({ length: 8 }, (_, index) => `Material from page ${index + 1}.`);
+  pages[4] = 'The selected pages explain max pooling and feature maps.';
+  pages[7] = 'An unrelated page also mentions max pooling.';
+  const bundle = buildQuestionContextBundle(pages, 'Explain max pooling', 5, 'page', true, 14_000, { start: 4, end: 6 });
+  assert.match(bundle.context, /Page 5/);
+  assert.doesNotMatch(bundle.context, /Page 8/);
+  assert.ok(bundle.references.every((reference) => reference.pageNumber >= 4 && reference.pageNumber <= 6));
+});
