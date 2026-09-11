@@ -204,17 +204,19 @@ function renderWholeDocumentNotes(doc: jsPDF, note: PageNote, documentTitle: str
   let currentY = notesTop;
   let pageCount = 0;
 
-  const footer = () => {
+  const finalizePage = () => {
+    const compactHeight = Math.min(pageHeight, Math.max(72, currentY - cardGap + 25.4));
+    doc.internal.pageSize.height = compactHeight;
     doc.setFontSize(9);
     doc.setFont('helvetica', 'italic');
     doc.setTextColor(148, 163, 184);
-    doc.text(`Whole-document notes - ${documentTitle}`, pageWidth / 2, pageHeight - 6, { align: 'center' });
+    doc.text(`Whole-document notes - ${documentTitle}`, pageWidth / 2, compactHeight - 6, { align: 'center' });
   };
 
   const startPage = (continued: boolean) => {
     if (pageCount > 0) {
-      footer();
-      doc.addPage();
+      finalizePage();
+      doc.addPage('a4', 'portrait');
     }
     pageCount += 1;
     doc.setFillColor(238, 242, 255);
@@ -292,7 +294,7 @@ function renderWholeDocumentNotes(doc: jsPDF, note: PageNote, documentTitle: str
       if (lineIndex < lines.length) startPage(true);
     }
   }
-  footer();
+  finalizePage();
 }
 
 /**
@@ -342,7 +344,7 @@ export async function exportStudyPackPDF(
       drawAnnotationsOnCanvas(context, canvas.width, canvas.height, annotations[pageIdx] || []);
       const imgData = canvas.toDataURL('image/jpeg', 0.85);
 
-      if (pageIdx > 1 || hasWholeDocumentNotes) doc.addPage();
+      if (pageIdx > 1 || hasWholeDocumentNotes) doc.addPage('a4', 'portrait');
 
       const imgProps = doc.getImageProperties(imgData);
       const pdfRatio = imgProps.width / imgProps.height;
@@ -377,16 +379,18 @@ export async function exportStudyPackPDF(
         let currentY = notesTop;
         let notesPageCount = 0;
 
-        const drawNotesFooter = () => {
+        const finalizeNotesPage = () => {
+          const compactHeight = Math.min(pageHeight, Math.max(66, currentY - cardGap + 25.4));
+          doc.internal.pageSize.height = compactHeight;
           doc.setFontSize(9);
           doc.setFont('helvetica', 'italic');
           doc.setTextColor(148, 163, 184);
-          doc.text(`Notes for Page ${pageIdx} - ${documentTitle}`, pageWidth / 2, pageHeight - 6, { align: 'center' });
+          doc.text(`Notes for Page ${pageIdx} - ${documentTitle}`, pageWidth / 2, compactHeight - 6, { align: 'center' });
         };
 
         const startNotesPage = (continued: boolean) => {
-          if (notesPageCount > 0) drawNotesFooter();
-          doc.addPage();
+          if (notesPageCount > 0) finalizeNotesPage();
+          doc.addPage('a4', 'portrait');
           notesPageCount += 1;
 
           doc.setFillColor(243, 244, 246);
@@ -537,7 +541,7 @@ export async function exportStudyPackPDF(
           }
         }
 
-        drawNotesFooter();
+        finalizeNotesPage();
       }
     }
   }

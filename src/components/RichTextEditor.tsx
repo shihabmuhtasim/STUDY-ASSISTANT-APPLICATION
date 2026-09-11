@@ -26,6 +26,8 @@ export function markdownToRichTextHtml(value: string) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
+    .replace(/\$([A-Za-z][A-Za-z0-9_{}^\\]*(?:\s*[=+\-*/]\s*[A-Za-z0-9_.{}^\\]+)?)\$/g, '$1')
+    .replace(/\*\*\*(.+?)\*\*\*/g, '**$1**')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/__(.+?)__/g, '<strong>$1</strong>')
     .replace(/`(.+?)`/g, '<code>$1</code>')

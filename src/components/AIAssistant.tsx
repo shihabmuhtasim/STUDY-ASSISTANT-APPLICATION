@@ -75,6 +75,18 @@ function displayModel(model: string) {
   return model;
 }
 
+function normalizeModelResponse(value: string) {
+  return value
+    .replace(/\\\$/g, '$')
+    .replace(/\$\$([\s\S]*?)\$\$/g, '$1')
+    .replace(/\$([A-Za-z][A-Za-z0-9_{}^\\]*(?:\s*[=+\-*/]\s*[A-Za-z0-9_.{}^\\]+)?)\$/g, '$1')
+    .replace(/\*\*\*(.+?)\*\*\*/g, '**$1**')
+    .replace(/^\s*\*{3,}\s*$/gm, '')
+    .replace(/\\([*_`])/g, '$1')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export function AIAssistant({
   pageNumber,
   pageImage,
@@ -249,11 +261,12 @@ export function AIAssistant({
         result = await askAIAboutPage({ ...request, modelPreference, allowFallback });
       }
       if (typeof result.remaining === 'number') onRemainingChange(result.remaining, result.remainingPercent);
-      const usedReferences = referencesEnabled ? referencesUsedInAnswer(result.response, contextBundle.references) : [];
+      const cleanedResponse = normalizeModelResponse(result.response);
+      const usedReferences = referencesEnabled ? referencesUsedInAnswer(cleanedResponse, contextBundle.references) : [];
       onAddInteraction({
         id: uuidv4(),
         prompt: text.trim(),
-        response: result.response,
+        response: cleanedResponse,
         createdAt: Date.now(),
         insertedIntoNotes: false,
         provider: result.provider,

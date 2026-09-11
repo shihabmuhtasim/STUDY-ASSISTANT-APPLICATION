@@ -118,6 +118,21 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     aiHistory: [],
   };
 
+  useEffect(() => {
+    if (!isNotesLoaded) return;
+    setNotes((current) => current[activeNoteKey] ? current : {
+      ...current,
+      [activeNoteKey]: {
+        id: uuidv4(),
+        documentId: document.id,
+        pageNumber: activeNoteKey,
+        content: '',
+        blocks: [],
+        aiHistory: [],
+      },
+    });
+  }, [activeNoteKey, document.id, isNotesLoaded]);
+
   const queueCloudSave = (page: number, note: PageNote, strokes: AnnotationStroke[]) => {
     if (!account) return;
     if (cloudSaveTimers.current[page]) clearTimeout(cloudSaveTimers.current[page]);
@@ -459,8 +474,11 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
             {activeTab === 'notes' && (
               <div className="h-full w-full">
                 <NotesPanel
+                  key={`${document.id}-${activeNoteKey}-${currentNote.id}`}
                   note={currentNote}
                   title={studyScope === 'document' ? 'Notes about the whole document' : undefined}
+                  defaultHeading={document.defaultNoteHeading || ''}
+                  onDefaultHeadingChange={(defaultNoteHeading) => onUpdateDocument({ ...document, defaultNoteHeading, updatedAt: Date.now() })}
                   onChange={handleNoteChange}
                   onClear={handleClearNote}
                   onSave={() => {
@@ -496,8 +514,11 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
                 {/* Notes Section */}
                 <Panel defaultSize={45} minSize={20} className="p-1">
                   <NotesPanel
+                    key={`${document.id}-${activeNoteKey}-${currentNote.id}`}
                     note={currentNote}
                     title={studyScope === 'document' ? 'Notes about the whole document' : undefined}
+                    defaultHeading={document.defaultNoteHeading || ''}
+                    onDefaultHeadingChange={(defaultNoteHeading) => onUpdateDocument({ ...document, defaultNoteHeading, updatedAt: Date.now() })}
                     onChange={handleNoteChange}
                     onClear={handleClearNote}
                     onSave={() => {

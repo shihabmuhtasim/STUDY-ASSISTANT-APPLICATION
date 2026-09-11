@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ArrowDown, ArrowUp, Check, Edit2, FileText, GripVertical, Plus, Save, Sparkles, Trash2, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ArrowDown, ArrowUp, Check, Edit2, FileText, GripVertical, Plus, Save, Settings2, Sparkles, Trash2, X } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { v4 as uuidv4 } from 'uuid';
 import { NoteBlock, PageNote } from '../types';
@@ -8,25 +8,31 @@ import { RichTextEditor, richTextToPlainText, toRichTextHtml } from './RichTextE
 interface NotesPanelProps {
   note: PageNote;
   title?: string;
+  defaultHeading?: string;
+  onDefaultHeadingChange?: (heading: string) => void;
   onChange: (content: string, blocks?: NoteBlock[]) => void;
   onClear: () => void;
   onSave: () => void;
 }
 
-export function NotesPanel({ note, title, onChange, onClear, onSave }: NotesPanelProps) {
+export function NotesPanel({ note, title, defaultHeading = '', onDefaultHeadingChange, onChange, onClear, onSave }: NotesPanelProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
+  const [adding, setAdding] = useState(() => !(note.blocks?.length || note.content?.trim()));
+  const [newTitle, setNewTitle] = useState(defaultHeading);
   const [newContent, setNewContent] = useState('');
   const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [headingSettingsOpen, setHeadingSettingsOpen] = useState(false);
+  const [headingDraft, setHeadingDraft] = useState(defaultHeading);
 
   const blocks: NoteBlock[] = note.blocks?.length
     ? note.blocks
     : note.content?.trim()
       ? [{ id: 'legacy-1', content: note.content, createdAt: Date.now(), isAiGenerated: false }]
       : [];
+
+  useEffect(() => setHeadingDraft(defaultHeading), [defaultHeading]);
 
   const saveBlocks = (updated: NoteBlock[]) => {
     const plainText = updated.map((block) => `${block.question ? `${block.question}\n` : ''}${richTextToPlainText(toRichTextHtml(block.content))}`).join('\n\n');
@@ -75,13 +81,13 @@ export function NotesPanel({ note, title, onChange, onClear, onSave }: NotesPane
       createdAt: Date.now(),
       isAiGenerated: false,
     }]);
-    setNewTitle('');
+    setNewTitle(defaultHeading);
     setNewContent('');
     setAdding(false);
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xs">
+    <div className="notes-panel flex h-full flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xs">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 p-3">
         <div className="flex min-w-0 items-center gap-2">
           <FileText size={18} className="shrink-0 text-emerald-600" />
@@ -89,10 +95,18 @@ export function NotesPanel({ note, title, onChange, onClear, onSave }: NotesPane
           <span className="text-xs text-slate-400">{blocks.length}</span>
         </div>
         <div className="flex items-center gap-1">
+          <button type="button" onClick={() => setHeadingSettingsOpen((value) => !value)} className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-emerald-600" title="Set a default heading for new note cards" aria-expanded={headingSettingsOpen}><Settings2 size={16} /></button>
           <button type="button" onClick={onClear} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" title={`Clear ${title ? 'whole-document' : 'page'} notes`}><Trash2 size={16} /></button>
           <button type="button" onClick={onSave} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"><Save size={14} /> Save</button>
         </div>
       </div>
+
+      {headingSettingsOpen && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2">
+          <input value={headingDraft} onChange={(event) => setHeadingDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { onDefaultHeadingChange?.(headingDraft.trim()); setNewTitle(headingDraft.trim()); setHeadingSettingsOpen(false); } }} placeholder="Default heading for this document (optional)" className="min-w-52 flex-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-emerald-500" />
+          <button type="button" onClick={() => { onDefaultHeadingChange?.(headingDraft.trim()); setNewTitle(headingDraft.trim()); setHeadingSettingsOpen(false); }} className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">Apply</button>
+        </div>
+      )}
 
       <div className="custom-scrollbar flex-1 overflow-y-auto bg-slate-50/60 p-3 lg:p-4">
         <div className="space-y-3">
@@ -136,14 +150,14 @@ export function NotesPanel({ note, title, onChange, onClear, onSave }: NotesPane
           ))}
 
           {adding ? (
-            <div className="space-y-3 rounded-lg border border-emerald-200 bg-white p-3 shadow-xs">
+            <div className="note-editor-surface space-y-3 rounded-lg border border-emerald-200 bg-white p-3 shadow-xs">
               <div className="flex items-center justify-between"><h4 className="text-sm font-semibold text-slate-800">New note card</h4><button type="button" onClick={() => setAdding(false)} className="p-1 text-slate-400" aria-label="Cancel new note"><X size={16} /></button></div>
               <input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="Title (optional)" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold outline-none focus:border-emerald-500" />
               <RichTextEditor value={newContent} onChange={setNewContent} />
               <div className="flex justify-end gap-2"><button type="button" onClick={() => setAdding(false)} className="rounded px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100">Cancel</button><button type="button" onClick={addBlock} className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white"><Plus size={14} /> Add card</button></div>
             </div>
           ) : (
-            <button type="button" onClick={() => setAdding(true)} className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 bg-white/70 py-4 text-sm font-medium text-emerald-700 hover:border-emerald-400 hover:bg-white"><Plus size={16} /> Add note card</button>
+            <button type="button" onClick={() => { setNewTitle(defaultHeading); setAdding(true); }} className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 bg-white/70 py-4 text-sm font-medium text-emerald-700 hover:border-emerald-400 hover:bg-white"><Plus size={16} /> Add note card</button>
           )}
         </div>
       </div>

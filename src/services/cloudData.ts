@@ -19,6 +19,7 @@ export interface CloudDocumentMetadata {
   driveFileId?: string;
   mimeType?: string;
   fileSize?: number;
+  defaultNoteHeading?: string;
   totalPages: number;
   createdAt: number;
   updatedAt: number;
@@ -50,6 +51,7 @@ function documentMetadata(document: StudyDocument): CloudDocumentMetadata {
     driveFileId: document.driveFileId,
     mimeType: document.mimeType,
     fileSize: document.fileSize,
+    defaultNoteHeading: document.defaultNoteHeading,
     totalPages: document.totalPages,
     createdAt: document.createdAt,
     updatedAt: document.updatedAt,

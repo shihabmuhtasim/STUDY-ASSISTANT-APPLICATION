@@ -8,6 +8,7 @@ export interface StudyDocument {
   mimeType?: string;
   fileSize?: number;
   cloudStatus?: 'local' | 'syncing' | 'synced' | 'error';
+  defaultNoteHeading?: string;
   totalPages: number;
   createdAt: number;
   updatedAt: number;

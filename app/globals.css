@@ -107,9 +107,20 @@ html[data-theme='dark'] .brand-mark {
 html[data-theme='dark'] .bg-white,
 html[data-theme='dark'] .bg-slate-50,
 html[data-theme='dark'] .bg-slate-100,
+html[data-theme='dark'] .bg-\[\#f1f1ee\],
 html[data-theme='dark'] .bg-\[\#f7f7f5\],
 html[data-theme='dark'] .bg-\[\#fcfcfa\] {
   background-color: var(--surface) !important;
+}
+
+html[data-theme='dark'] .notes-panel,
+html[data-theme='dark'] .notes-panel .bg-slate-50\/60 {
+  background-color: #111317 !important;
+}
+
+html[data-theme='dark'] .notes-panel article,
+html[data-theme='dark'] .notes-panel .note-editor-surface {
+  background-color: #181b20 !important;
 }
 
 html[data-theme='dark'] .bg-white\/90,
