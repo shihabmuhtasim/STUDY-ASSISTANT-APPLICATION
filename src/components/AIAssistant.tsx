@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bot, Check, ChevronDown, Copy, Crown, Image as ImageIcon, KeyRound, ListFilter, Loader2, Lock, Mic, Plus, Quote, Radio, Send, Sparkles, Square } from 'lucide-react';
+import { Bot, Check, ChevronDown, Copy, Crown, HelpCircle, Image as ImageIcon, KeyRound, ListFilter, Loader2, Lock, Mic, Plus, Quote, Radio, Send, Sparkles, Square } from 'lucide-react';
 import { AccountIdentity, AccountSummary, AIInteraction, AIModelPreference, AISourceReference, CustomAIConnection } from '../types';
 import { AIRequestError, askAIAboutPage } from '../services/ai';
 import { askCustomAI } from '../services/customAI';
@@ -167,6 +167,9 @@ export function AIAssistant({
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [rangeMenuOpen, setRangeMenuOpen] = useState(false);
+  const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
+  const [voiceHelpOpen, setVoiceHelpOpen] = useState(false);
   const [recordingMode, setRecordingMode] = useState<'page' | 'continuous' | null>(null);
   const [recordingPage, setRecordingPage] = useState<number | null>(null);
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
@@ -503,7 +506,7 @@ export function AIAssistant({
     latestPageRef.current = { pageNumber, pageText, documentPages };
     if (previousPageRef.current !== pageNumber) {
       previousPageRef.current = pageNumber;
-      if (continuousRecordingRef.current && recognitionRef.current) recognitionRef.current.stop();
+      if (recognitionRef.current) recognitionRef.current.stop();
     }
   }, [documentPages, pageNumber, pageText]);
 
@@ -538,12 +541,35 @@ export function AIAssistant({
 
   return (
     <div ref={assistantRef} className="flex flex-col h-full bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
-      <div className="p-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-2 shrink-0">
+      <div className="relative z-30 flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 p-3">
         <div className="flex items-center gap-2 min-w-0">
           <Sparkles size={18} className="text-indigo-600 shrink-0" />
           <h3 className="font-medium text-slate-800 text-sm truncate">{scope === 'document' ? 'AI Document Assistant' : 'AI Page Assistant'}</h3>
         </div>
-        <span className="text-xs font-medium text-slate-500 whitespace-nowrap">Document-aware</span>
+        <div className="flex items-center gap-1">
+          <span className="mr-1 hidden whitespace-nowrap text-xs font-medium text-slate-500 xl:inline">Document-aware</span>
+          <button type="button" onClick={() => setIncludeImage((enabled) => !enabled)} disabled={!hasProAccess || !pageImage || scope === 'document'} className={`grid h-8 w-8 place-items-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${includeImage ? 'border-indigo-300 bg-indigo-100 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:text-indigo-700'}`} title={includeImage ? 'Page image is included' : 'Include the current page image'} aria-label="Include page image" aria-pressed={includeImage}><ImageIcon size={15} /></button>
+          <button type="button" onClick={() => setReferencesEnabled((enabled) => !enabled)} className={`grid h-8 w-8 place-items-center rounded-md border transition-colors ${referencesEnabled ? 'border-indigo-300 bg-indigo-100 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:text-indigo-700'}`} title={referencesEnabled ? 'References are enabled' : 'Add clickable PDF references'} aria-label="References" aria-pressed={referencesEnabled}><Quote size={15} /></button>
+          <div className="relative">
+            <button type="button" onClick={() => { setRangeMenuOpen((open) => !open); setVoiceMenuOpen(false); setVoiceHelpOpen(false); }} className={`grid h-8 w-8 place-items-center rounded-md border transition-colors ${manualRangeEnabled ? 'border-indigo-300 bg-indigo-100 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:text-indigo-700'}`} title="Choose which PDF pages the AI should use" aria-label="Manual page range" aria-expanded={rangeMenuOpen}><ListFilter size={15} /></button>
+            {rangeMenuOpen && <div className="absolute right-0 top-10 z-50 w-64 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-xl">
+              <label className="flex cursor-pointer items-center gap-2 font-semibold text-slate-700"><input type="checkbox" checked={manualRangeEnabled} onChange={(event) => setManualRangeEnabled(event.target.checked)} className="accent-indigo-600" />Use a manual page range</label>
+              <p className="mt-1 text-[11px] text-slate-500">Limit answers to consecutive pages you choose.</p>
+              {manualRangeEnabled && <div className="mt-3 flex items-center gap-1.5"><span>Pages</span><input type="number" min={1} max={maxPage} value={rangeStart} onChange={(event) => { const next = Math.max(1, Math.min(maxPage, Number(event.target.value) || 1)); setRangeStart(next); setRangeEnd((current) => Math.max(current, next)); }} className="h-8 w-14 rounded border border-slate-200 px-1.5 text-center" aria-label="First context page" /><span>to</span><input type="number" min={rangeStart} max={maxPage} value={rangeEnd} onChange={(event) => setRangeEnd(Math.max(rangeStart, Math.min(maxPage, Number(event.target.value) || rangeStart)))} className="h-8 w-14 rounded border border-slate-200 px-1.5 text-center" aria-label="Last context page" /><span>of {maxPage}</span></div>}
+            </div>}
+          </div>
+          <div className="relative flex items-center gap-0.5">
+            <button type="button" onClick={() => { setVoiceMenuOpen((open) => !open); setVoiceHelpOpen(false); setRangeMenuOpen(false); }} className={`relative grid h-8 w-8 place-items-center rounded-md border transition-colors ${recordingMode ? 'border-red-300 bg-red-50 text-red-700' : voiceJobs > 0 ? 'border-indigo-300 bg-indigo-100 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:text-indigo-700'}`} title="Lecture voice notes" aria-label="Lecture voice notes" aria-expanded={voiceMenuOpen}><Mic size={15} />{recordingMode && <span className="absolute right-1 top-1 h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />}</button>
+            <button type="button" onClick={() => { setVoiceHelpOpen((open) => !open); setVoiceMenuOpen(false); setRangeMenuOpen(false); }} className="grid h-8 w-7 place-items-center rounded-md text-slate-400 hover:bg-white hover:text-indigo-700" title="How voice notes work" aria-label="How voice notes work" aria-expanded={voiceHelpOpen}><HelpCircle size={15} /></button>
+            {voiceHelpOpen && <div className="absolute right-0 top-10 z-50 w-72 rounded-lg border border-slate-200 bg-white p-3 text-xs leading-relaxed text-slate-600 shadow-xl">Your browser transcribes the lecture. NoteMyDoc combines that transcript with the current PDF page and sends it only to your selected Custom API. Shared AI usage is never consumed.</div>}
+            {voiceMenuOpen && <div className="absolute right-0 top-10 z-50 w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
+              <div className="flex items-center justify-between gap-2"><div><p className="text-xs font-semibold text-slate-800">Lecture voice notes</p><p className="mt-0.5 text-[11px] text-slate-500">Custom API required</p></div><button type="button" onClick={() => setConnectionsOpen(true)} className="max-w-32 truncate rounded-md border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:border-indigo-300">{activeConnection?.name || 'Add Custom API'}</button></div>
+              {recordingMode ? <button type="button" onClick={stopVoiceRecording} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700"><Square size={12} fill="currentColor" />Stop and create notes</button> : activeConnection ? <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={() => { startVoiceRecording('page'); setVoiceMenuOpen(false); }} className="inline-flex items-center justify-center gap-1.5 rounded-md border border-indigo-200 px-2 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"><Mic size={13} />This page</button><button type="button" onClick={() => { startVoiceRecording('continuous'); setVoiceMenuOpen(false); }} className="inline-flex items-center justify-center gap-1.5 rounded-md bg-indigo-600 px-2 py-2 text-xs font-semibold text-white hover:bg-indigo-700"><Radio size={13} />Auto by page</button></div> : <button type="button" onClick={() => setConnectionsOpen(true)} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"><KeyRound size={13} />Add Custom API to record</button>}
+              {(recordingMode || voiceJobs > 0) && <p className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-500" aria-live="polite">{recordingMode ? <><span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />Recording page {recordingPage}{recordingMode === 'continuous' ? ' - auto by page' : ''}</> : <><Loader2 size={12} className="animate-spin text-indigo-600" />Creating voice notes...</>}</p>}
+              {voiceNotice && <p className="mt-2 text-[11px] text-slate-600" aria-live="polite">{voiceNotice}</p>}
+            </div>}
+          </div>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
@@ -619,51 +645,6 @@ export function AIAssistant({
             <button type="button" onClick={() => hasProAccess ? setConnectionsOpen(true) : onUpgrade()} className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${hasProAccess ? 'border-slate-200 text-slate-600 hover:border-indigo-300 hover:text-indigo-700' : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-indigo-300 hover:text-indigo-700'}`} title={hasProAccess ? 'Manage Custom API connections' : 'Custom API requires Premium'} aria-label={hasProAccess ? 'Manage Custom API connections' : 'Upgrade for Custom API'}><KeyRound size={14} /><span>Custom API</span>{!hasProAccess && <Lock size={12} />}</button>
           </div>
           {hasProAccess ? <div className="flex items-center gap-3"><span className="text-xs font-semibold text-indigo-700">{remainingPercent}% left</span><label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer"><input type="checkbox" checked={allowFallback} onChange={(event) => setAllowFallback(event.target.checked)} className="accent-indigo-600" />Auto fallback</label></div> : <button type="button" onClick={onUpgrade} className="inline-flex items-center gap-1.5 rounded-md bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"><Lock size={12} />{remainingPercent}% AI usage left · Upgrade</button>}
-        </div>
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-            <input type="checkbox" checked={includeImage} onChange={(event) => setIncludeImage(event.target.checked)} disabled={!hasProAccess || !pageImage || scope === 'document'} className="accent-indigo-600" />
-            <ImageIcon size={14} />Include page image
-          </label>
-          <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer" title="Add clickable sources that open and highlight the supporting PDF text">
-            <input type="checkbox" checked={referencesEnabled} onChange={(event) => setReferencesEnabled(event.target.checked)} className="accent-indigo-600" />
-            <Quote size={14} />References
-          </label>
-        </div>
-        <div className="mb-2 flex min-h-8 flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5">
-          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600" title="Limit AI document context to consecutive pages you choose">
-            <input type="checkbox" checked={manualRangeEnabled} onChange={(event) => setManualRangeEnabled(event.target.checked)} className="accent-indigo-600" />
-            <ListFilter size={14} />Manual page range
-          </label>
-          {manualRangeEnabled && (
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <span>Pages</span>
-              <input type="number" min={1} max={maxPage} value={rangeStart} onChange={(event) => { const next = Math.max(1, Math.min(maxPage, Number(event.target.value) || 1)); setRangeStart(next); setRangeEnd((current) => Math.max(current, next)); }} className="h-7 w-14 rounded border border-slate-200 bg-white px-1.5 text-center text-xs text-slate-700" aria-label="First context page" />
-              <span>to</span>
-              <input type="number" min={rangeStart} max={maxPage} value={rangeEnd} onChange={(event) => setRangeEnd(Math.max(rangeStart, Math.min(maxPage, Number(event.target.value) || rangeStart)))} className="h-7 w-14 rounded border border-slate-200 bg-white px-1.5 text-center text-xs text-slate-700" aria-label="Last context page" />
-              <span>of {maxPage}</span>
-            </div>
-          )}
-        </div>
-        <div className="mb-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-700"><Mic size={14} className="text-indigo-600" />Lecture voice notes <span className="font-normal text-slate-400">Custom API only</span></span>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {activeConnection && <button type="button" onClick={() => setConnectionsOpen(true)} className="max-w-36 truncate rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:border-indigo-300" title="Choose the Custom API used for voice notes">{activeConnection.name}</button>}
-              {recordingMode ? (
-                <button type="button" onClick={stopVoiceRecording} className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700" title="Stop recording and create notes"><Square size={12} fill="currentColor" />Stop</button>
-              ) : connections.length > 0 ? (
-                <>
-                  <button type="button" onClick={() => startVoiceRecording('page')} className="inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-white px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50" title="Record until you press Stop, then add notes to this page"><Mic size={13} />This page</button>
-                  <button type="button" onClick={() => startVoiceRecording('continuous')} className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700" title="Keep recording and create a separate note whenever you change page"><Radio size={13} />Auto by page</button>
-                </>
-              ) : (
-                <button type="button" onClick={() => setConnectionsOpen(true)} className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700" title="A Custom API is required so voice notes do not use shared AI"><KeyRound size={13} />Add Custom API</button>
-              )}
-            </div>
-          </div>
-          {(recordingMode || voiceJobs > 0) && <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-500" aria-live="polite">{recordingMode ? <><span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />Recording page {recordingPage}{recordingMode === 'continuous' ? ' - changes page automatically' : ''}</> : <><Loader2 size={12} className="animate-spin text-indigo-600" />Creating notes with your Custom API...</>}</p>}
-          {voiceNotice && <p className="mt-1.5 text-[11px] text-slate-600" aria-live="polite">{voiceNotice}</p>}
         </div>
         <form onSubmit={(event) => { event.preventDefault(); handleAsk(prompt); }} className="relative flex items-center">
           <input

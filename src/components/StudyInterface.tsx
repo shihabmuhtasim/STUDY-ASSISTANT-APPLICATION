@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
+import DOMPurify from 'dompurify';
 import { PDFViewer } from './PDFViewer';
 import { NotesPanel } from './NotesPanel';
 import { AIAssistant } from './AIAssistant';
 import { AccountIdentity, AccountSummary, StudyDocument, PageNote, AIInteraction, NoteBlock, AnnotationStroke, AISourceReference, PDFCitationTarget } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { ArrowLeft, Download, BookOpen, GripVertical, GripHorizontal, FileText, Sparkles, LayoutGrid, Eye, Files, Maximize2, Minimize2, SlidersHorizontal, Wrench } from 'lucide-react';
+import { ArrowLeft, Download, BookOpen, GripVertical, GripHorizontal, FileText, Sparkles, LayoutGrid, Eye, Files, Maximize2, Mic, Minimize2, SlidersHorizontal, Wrench } from 'lucide-react';
 import { get, set } from 'idb-keyval';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { exportStudyPackPDF } from '../utils/pdfExport';
-import { toRichTextHtml } from './RichTextEditor';
+import { markdownToRichTextHtml, toRichTextHtml } from './RichTextEditor';
 import { loadCloudWorkspace, saveCloudPage } from '../services/cloudData';
 
 interface StudyInterfaceProps {
@@ -45,8 +46,8 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   // Universal Layout Mode: 'split' (all 3 panes visible) | 'tabs' (1 pane visible with tab navigation) | 'pdf-only'
   const [layoutMode, setLayoutMode] = useState<'split' | 'tabs' | 'pdf-only'>('split');
 
-  // Active Tab when in 'tabs' mode: 'pdf' | 'notes' | 'ai'
-  const [activeTab, setActiveTab] = useState<'pdf' | 'notes' | 'ai'>('pdf');
+  // Active Tab when in 'tabs' mode: document, notes, manual AI chat, or generated voice notes.
+  const [activeTab, setActiveTab] = useState<'pdf' | 'notes' | 'ai' | 'voice'>('pdf');
 
   // Keep narrow screens in the tabbed layout so panels cannot overlap.
   useEffect(() => {
@@ -213,7 +214,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     const newBlock: NoteBlock = {
       id: uuidv4(),
       question: questionHeader,
-      content: toRichTextHtml(editedText),
+      content: markdownToRichTextHtml(editedText),
       createdAt: Date.now(),
       isAiGenerated: true,
     };
@@ -255,7 +256,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     const updatedBlocks: NoteBlock[] = [...existingBlocks, {
       id: uuidv4(),
       question: questionHeader,
-      content: toRichTextHtml(editedText),
+      content: markdownToRichTextHtml(editedText),
       createdAt: Date.now(),
       isAiGenerated: true,
     }];
@@ -278,6 +279,12 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
       aiRemainingPercent: remainingPercent ?? Math.max(0, Math.min(100, Math.round(remaining / account.aiLimit * 100))),
     });
   };
+
+  const voiceNotes = Object.values(notes)
+    .flatMap((note) => (note.blocks || [])
+      .filter((block) => block.isAiGenerated && block.question?.startsWith('Lecture notes - Page '))
+      .map((block) => ({ pageNumber: note.pageNumber, block })))
+    .sort((left, right) => left.pageNumber - right.pageNumber || left.block.createdAt - right.block.createdAt);
 
   const handleDocumentLoaded = (totalPages: number) => {
     if (document.totalPages !== totalPages) {
@@ -510,6 +517,19 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
             <Sparkles size={16} />
             <span>AI Assistant</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('voice')}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
+              activeTab === 'voice'
+                ? 'border border-violet-200/80 bg-violet-50 text-violet-700 shadow-2xs'
+                : 'text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            <Mic size={16} />
+            <span className="hidden sm:inline">Voice Notes</span><span className="sm:hidden">Voice</span>
+            {voiceNotes.length > 0 && <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-violet-600 px-1 text-[10px] font-bold text-white">{voiceNotes.length}</span>}
+          </button>
         </div>
       )}
 
@@ -564,11 +584,14 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
               </div>
             )}
 
-            {activeTab === 'ai' && (
-              <div className="h-full w-full">
-                <AIAssistant {...aiAssistantProps} />
-              </div>
-            )}
+            <div className={`h-full w-full ${activeTab === 'ai' ? 'block' : 'hidden'}`} aria-hidden={activeTab !== 'ai'}>
+              <AIAssistant {...aiAssistantProps} />
+            </div>
+
+            {activeTab === 'voice' && <div className="h-full w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xs">
+              <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4"><div><h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900"><Mic size={17} className="text-violet-600" />Voice Notes</h3><p className="mt-1 text-xs text-slate-500">Lecture notes created from recordings, organized by PDF page.</p></div><span className="text-xs font-semibold text-violet-700">{voiceNotes.length} note{voiceNotes.length === 1 ? '' : 's'}</span></div>
+              {voiceNotes.length === 0 ? <div className="grid min-h-72 place-items-center px-6 text-center"><div><Mic size={28} className="mx-auto text-violet-400" /><p className="mt-3 text-sm font-semibold text-slate-800">No voice notes yet</p><p className="mt-1 text-xs text-slate-500">Open AI Assistant and use its microphone button to record this page or record automatically as pages change.</p><button type="button" onClick={() => setActiveTab('ai')} className="mt-4 rounded-md bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-700">Open voice controls</button></div></div> : <div className="space-y-3 p-4">{voiceNotes.map(({ pageNumber: voicePage, block }) => <article key={block.id} className="rounded-lg border border-violet-100 bg-violet-50/40 p-4"><div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase text-violet-600">Page {voicePage}</p><h4 className="mt-0.5 text-sm font-semibold text-slate-900">{block.question || `Lecture notes - Page ${voicePage}`}</h4></div><button type="button" onClick={() => { setPageNumber(voicePage); setActiveTab('notes'); }} className="shrink-0 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:border-violet-300 hover:text-violet-700">Open page notes</button></div><div className="rich-note-content text-sm leading-relaxed text-slate-700" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(toRichTextHtml(block.content)) }} /></article>)}</div>}
+            </div>}
           </div>
         ) : (
           /* 3-Pane Split View - Visible simultaneously on laptop, desktop, tablet, or mobile */
