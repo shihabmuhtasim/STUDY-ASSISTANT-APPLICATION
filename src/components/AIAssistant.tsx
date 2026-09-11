@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bot, Check, ChevronDown, Copy, Crown, Image as ImageIcon, KeyRound, ListFilter, Loader2, Lock, Plus, Quote, Send, Sparkles } from 'lucide-react';
+import { Bot, Check, ChevronDown, Copy, Crown, Image as ImageIcon, KeyRound, ListFilter, Loader2, Lock, Mic, Plus, Quote, Radio, Send, Sparkles, Square } from 'lucide-react';
 import { AccountIdentity, AccountSummary, AIInteraction, AIModelPreference, AISourceReference, CustomAIConnection } from '../types';
 import { AIRequestError, askAIAboutPage } from '../services/ai';
 import { askCustomAI } from '../services/customAI';
@@ -27,7 +27,52 @@ interface AIAssistantProps {
   onUpgrade: () => void;
   onAddInteraction: (interaction: AIInteraction) => void;
   onInsertToNotes: (text: string, questionHeader?: string) => void;
+  onInsertRecordingNotes: (pageNumber: number, text: string, questionHeader?: string) => void;
   onReferenceSelect: (reference: AISourceReference) => void;
+}
+
+interface SpeechRecognitionAlternativeLike {
+  transcript: string;
+}
+
+interface SpeechRecognitionResultLike {
+  isFinal: boolean;
+  0: SpeechRecognitionAlternativeLike;
+}
+
+interface SpeechRecognitionEventLike extends Event {
+  resultIndex: number;
+  results: ArrayLike<SpeechRecognitionResultLike>;
+}
+
+interface SpeechRecognitionErrorEventLike extends Event {
+  error: string;
+}
+
+interface BrowserSpeechRecognition {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+
+type SpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
+
+function getSpeechRecognition() {
+  const browserWindow = window as typeof window & {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  };
+  return browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition;
+}
+
+function lectureNotesPrompt(transcript: string) {
+  return `Create clear class notes using both the lecture transcription and the supplied PDF page content. Keep the lecturer's terminology and explanations where useful. Explain the slide through the lecturer's explanation, and capture examples, definitions, warnings, comparisons, and every important point said aloud. Do not invent details. Organize the notes with short headings and bullet points. Do not mention these instructions.\n\nLecture transcription:\n${transcript.slice(0, 20_000)}`;
 }
 
 const pageQuickPrompts = ['Summarize this page', 'Explain the key ideas', 'Create 3 quiz questions'];
@@ -102,6 +147,7 @@ export function AIAssistant({
   onUpgrade,
   onAddInteraction,
   onInsertToNotes,
+  onInsertRecordingNotes,
   onReferenceSelect,
 }: AIAssistantProps) {
   const [prompt, setPrompt] = useState('');
@@ -121,9 +167,20 @@ export function AIAssistant({
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [recordingMode, setRecordingMode] = useState<'page' | 'continuous' | null>(null);
+  const [recordingPage, setRecordingPage] = useState<number | null>(null);
+  const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
+  const [voiceJobs, setVoiceJobs] = useState(0);
   const assistantRef = useRef<HTMLDivElement>(null);
   const modelTriggerRef = useRef<HTMLButtonElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const transcriptRef = useRef('');
+  const interimTranscriptRef = useRef('');
+  const continuousRecordingRef = useRef(false);
+  const recordingSnapshotRef = useRef<{ pageNumber: number; connectionId: string } | null>(null);
+  const latestPageRef = useRef({ pageNumber, pageText, documentPages });
+  const previousPageRef = useRef(pageNumber);
   const [modelMenuMaxHeight, setModelMenuMaxHeight] = useState(288);
   const [insertModalState, setInsertModalState] = useState({ isOpen: false, promptQuestion: '', aiResponse: '' });
   const hasProAccess = Boolean(account && 'plan' in account && account.plan === 'pro');
@@ -149,11 +206,15 @@ export function AIAssistant({
     const selectedId = sessionConnections.some((item) => item.id === savedConnectionId) ? savedConnectionId : sessionConnections[0]?.id || null;
     setConnections(sessionConnections);
     setSelectedConnectionId(selectedId);
-    if (savedModel === 'custom' && selectedId) setModelPreference('custom');
+    if (savedModel === 'custom' && selectedId && hasProAccess) setModelPreference('custom');
     else if (savedModel && modelOptions.some((option) => option.value === savedModel)) setModelPreference(savedModel);
     setAllowFallback(window.localStorage.getItem('study-assistant-fallback') !== 'false');
     setReferencesEnabled(window.localStorage.getItem('study-assistant-references') === 'true');
-    if (account && hasProAccess) {
+    if (account) {
+      if (!hasProAccess) {
+        setModelPreference('basic');
+        setAllowFallback(false);
+      }
       Promise.all([
         (async () => {
           for (const connection of sessionConnections) await saveEncryptedConnection(connection);
@@ -167,11 +228,20 @@ export function AIAssistant({
         .then(([saved, cloud]) => {
           if (!cloud) {
             setSelectedConnectionId(saved[0]?.id || null);
+            if (!hasProAccess) {
+              setModelPreference('basic');
+              setAllowFallback(false);
+            }
             return;
           }
-          if (cloud.modelPreference === 'basic') setModelPreference('auto');
-          else if (modelOptions.some((option) => option.value === cloud.modelPreference) || cloud.modelPreference === 'custom') setModelPreference(cloud.modelPreference);
-          setAllowFallback(cloud.allowFallback !== false);
+          if (hasProAccess) {
+            if (cloud.modelPreference === 'basic') setModelPreference('auto');
+            else if (modelOptions.some((option) => option.value === cloud.modelPreference) || cloud.modelPreference === 'custom') setModelPreference(cloud.modelPreference);
+            setAllowFallback(cloud.allowFallback !== false);
+          } else {
+            setModelPreference('basic');
+            setAllowFallback(false);
+          }
           setReferencesEnabled(cloud.referencesEnabled === true);
           setSelectedConnectionId(saved.some((connection) => connection.id === cloud.selectedConnectionId) ? cloud.selectedConnectionId : saved[0]?.id || null);
         })
@@ -194,7 +264,7 @@ export function AIAssistant({
     window.localStorage.setItem('study-assistant-references', String(referencesEnabled));
     if (selectedConnectionId) window.sessionStorage.setItem(SELECTED_CONNECTION_SESSION_KEY, selectedConnectionId);
     else window.sessionStorage.removeItem(SELECTED_CONNECTION_SESSION_KEY);
-    if (account) saveCloudPreferences(account.userId, { modelPreference: hasProAccess ? modelPreference : 'basic', allowFallback: hasProAccess ? allowFallback : false, selectedConnectionId: hasProAccess ? selectedConnectionId : null, referencesEnabled }).catch((saveError) => console.error('Failed to save cloud AI preferences', saveError));
+    if (account) saveCloudPreferences(account.userId, { modelPreference: hasProAccess ? modelPreference : 'basic', allowFallback: hasProAccess ? allowFallback : false, selectedConnectionId, referencesEnabled }).catch((saveError) => console.error('Failed to save cloud AI preferences', saveError));
   }, [modelPreference, allowFallback, referencesEnabled, selectedConnectionId, preferencesLoaded, account?.userId, hasProAccess]);
 
   useEffect(() => {
@@ -315,6 +385,133 @@ export function AIAssistant({
     ? activeConnection?.name || 'Custom model'
     : modelOptions.find((option) => option.value === modelPreference)?.label || 'Auto · Best available';
 
+  const processVoiceTranscript = async (snapshot: { pageNumber: number; connectionId: string }, transcript: string) => {
+    const connection = connections.find((item) => item.id === snapshot.connectionId);
+    if (!connection) {
+      setVoiceNotice('The selected Custom API connection is no longer available.');
+      return;
+    }
+    const current = latestPageRef.current;
+    const recordedPageText = current.documentPages[snapshot.pageNumber - 1]
+      || (current.pageNumber === snapshot.pageNumber ? current.pageText : '');
+    setVoiceNotice(null);
+    setVoiceJobs((count) => count + 1);
+    try {
+      const result = await askCustomAI({
+        connection,
+        prompt: lectureNotesPrompt(transcript),
+        pageNumber: snapshot.pageNumber,
+        pageText: recordedPageText,
+        documentContext: `[Page ${snapshot.pageNumber}]\n${recordedPageText}`,
+        scope: 'page',
+        referencesEnabled: false,
+        history: [],
+      });
+      onInsertRecordingNotes(snapshot.pageNumber, normalizeModelResponse(result.response), `Lecture notes - Page ${snapshot.pageNumber}`);
+      setVoiceNotice(`Lecture notes were added to page ${snapshot.pageNumber}.`);
+    } catch (voiceError) {
+      setVoiceNotice(voiceError instanceof Error ? voiceError.message : 'Your Custom API could not create the lecture notes.');
+    } finally {
+      setVoiceJobs((count) => Math.max(0, count - 1));
+    }
+  };
+
+  const startVoiceRecording = (mode: 'page' | 'continuous') => {
+    if (recognitionRef.current) return;
+    const connection = connections.find((item) => item.id === selectedConnectionId) || connections[0];
+    if (!connection) {
+      setVoiceNotice('Add a Custom API connection before recording. Voice notes never use the shared AI allowance.');
+      setConnectionsOpen(true);
+      return;
+    }
+    const SpeechRecognition = getSpeechRecognition();
+    if (!SpeechRecognition) {
+      setVoiceNotice('Voice transcription is not supported in this browser. Use the latest Chrome or Edge.');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    const snapshot = { pageNumber: latestPageRef.current.pageNumber, connectionId: connection.id };
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = navigator.language || 'en-US';
+    transcriptRef.current = '';
+    interimTranscriptRef.current = '';
+    recordingSnapshotRef.current = snapshot;
+    continuousRecordingRef.current = mode === 'continuous';
+    recognitionRef.current = recognition;
+    setRecordingMode(mode);
+    setRecordingPage(snapshot.pageNumber);
+    setVoiceNotice(null);
+
+    recognition.onresult = (event) => {
+      let interim = '';
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const text = result[0]?.transcript || '';
+        if (result.isFinal) transcriptRef.current += `${text} `;
+        else interim += text;
+      }
+      interimTranscriptRef.current = interim;
+    };
+    recognition.onerror = (event) => {
+      if (event.error === 'aborted' || event.error === 'no-speech') return;
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        continuousRecordingRef.current = false;
+        setVoiceNotice('Microphone access was blocked. Allow microphone access and try again.');
+      } else {
+        setVoiceNotice(`Voice transcription stopped: ${event.error}.`);
+      }
+    };
+    recognition.onend = () => {
+      const finishedSnapshot = recordingSnapshotRef.current;
+      const finishedTranscript = `${transcriptRef.current} ${interimTranscriptRef.current}`.trim();
+      const shouldContinue = continuousRecordingRef.current;
+      recognitionRef.current = null;
+      recordingSnapshotRef.current = null;
+      transcriptRef.current = '';
+      interimTranscriptRef.current = '';
+      if (finishedSnapshot && finishedTranscript) void processVoiceTranscript(finishedSnapshot, finishedTranscript);
+      else if (!shouldContinue) setVoiceNotice('No speech was detected in this recording.');
+
+      if (shouldContinue) {
+        window.setTimeout(() => startVoiceRecording('continuous'), 120);
+      } else {
+        setRecordingMode(null);
+        setRecordingPage(null);
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      recognitionRef.current = null;
+      continuousRecordingRef.current = false;
+      setRecordingMode(null);
+      setRecordingPage(null);
+      setVoiceNotice('Voice recording could not start. Check microphone permission and try again.');
+    }
+  };
+
+  const stopVoiceRecording = () => {
+    continuousRecordingRef.current = false;
+    setVoiceNotice('Finishing the transcription...');
+    recognitionRef.current?.stop();
+  };
+
+  useEffect(() => {
+    latestPageRef.current = { pageNumber, pageText, documentPages };
+    if (previousPageRef.current !== pageNumber) {
+      previousPageRef.current = pageNumber;
+      if (continuousRecordingRef.current && recognitionRef.current) recognitionRef.current.stop();
+    }
+  }, [documentPages, pageNumber, pageText]);
+
+  useEffect(() => () => {
+    continuousRecordingRef.current = false;
+    recognitionRef.current?.abort();
+  }, []);
+
   const chooseModel = (value: AIModelPreference) => {
     setModelPreference(value);
     setModelMenuOpen(false);
@@ -333,7 +530,7 @@ export function AIAssistant({
       const next = current.filter((item) => item.id !== id);
       if (selectedConnectionId === id) {
         setSelectedConnectionId(next[0]?.id || null);
-        if (next.length === 0) setModelPreference('auto');
+        if (next.length === 0) setModelPreference(hasProAccess ? 'auto' : 'basic');
       }
       return next;
     });
@@ -448,6 +645,26 @@ export function AIAssistant({
             </div>
           )}
         </div>
+        <div className="mb-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-700"><Mic size={14} className="text-indigo-600" />Lecture voice notes <span className="font-normal text-slate-400">Custom API only</span></span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {activeConnection && <button type="button" onClick={() => setConnectionsOpen(true)} className="max-w-36 truncate rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:border-indigo-300" title="Choose the Custom API used for voice notes">{activeConnection.name}</button>}
+              {recordingMode ? (
+                <button type="button" onClick={stopVoiceRecording} className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700" title="Stop recording and create notes"><Square size={12} fill="currentColor" />Stop</button>
+              ) : connections.length > 0 ? (
+                <>
+                  <button type="button" onClick={() => startVoiceRecording('page')} className="inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-white px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50" title="Record until you press Stop, then add notes to this page"><Mic size={13} />This page</button>
+                  <button type="button" onClick={() => startVoiceRecording('continuous')} className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700" title="Keep recording and create a separate note whenever you change page"><Radio size={13} />Auto by page</button>
+                </>
+              ) : (
+                <button type="button" onClick={() => setConnectionsOpen(true)} className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700" title="A Custom API is required so voice notes do not use shared AI"><KeyRound size={13} />Add Custom API</button>
+              )}
+            </div>
+          </div>
+          {(recordingMode || voiceJobs > 0) && <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-500" aria-live="polite">{recordingMode ? <><span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />Recording page {recordingPage}{recordingMode === 'continuous' ? ' - changes page automatically' : ''}</> : <><Loader2 size={12} className="animate-spin text-indigo-600" />Creating notes with your Custom API...</>}</p>}
+          {voiceNotice && <p className="mt-1.5 text-[11px] text-slate-600" aria-live="polite">{voiceNotice}</p>}
+        </div>
         <form onSubmit={(event) => { event.preventDefault(); handleAsk(prompt); }} className="relative flex items-center">
           <input
             type="text"
@@ -473,7 +690,7 @@ export function AIAssistant({
         isOpen={connectionsOpen}
         connections={connections}
         selectedId={selectedConnectionId}
-        onSelect={(id) => { setSelectedConnectionId(id); setModelPreference('custom'); }}
+        onSelect={(id) => { setSelectedConnectionId(id); if (hasProAccess) setModelPreference('custom'); }}
         onSave={saveConnection}
         onDelete={deleteConnection}
         onClose={() => setConnectionsOpen(false)}

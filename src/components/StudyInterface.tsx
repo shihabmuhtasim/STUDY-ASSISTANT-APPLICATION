@@ -4,7 +4,7 @@ import { NotesPanel } from './NotesPanel';
 import { AIAssistant } from './AIAssistant';
 import { AccountIdentity, AccountSummary, StudyDocument, PageNote, AIInteraction, NoteBlock, AnnotationStroke, AISourceReference, PDFCitationTarget } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { ArrowLeft, Download, BookOpen, GripVertical, GripHorizontal, FileText, Sparkles, LayoutGrid, Eye, Files, Maximize2, Minimize2, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, Download, BookOpen, GripVertical, GripHorizontal, FileText, Sparkles, LayoutGrid, Eye, Files, Maximize2, Minimize2, SlidersHorizontal, Wrench } from 'lucide-react';
 import { get, set } from 'idb-keyval';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { exportStudyPackPDF } from '../utils/pdfExport';
@@ -40,6 +40,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   const [citationTarget, setCitationTarget] = useState<PDFCitationTarget | null>(null);
   const [studyMode, setStudyMode] = useState(false);
   const [studyControlsOpen, setStudyControlsOpen] = useState(false);
+  const notesRef = useRef(notes);
 
   // Universal Layout Mode: 'split' (all 3 panes visible) | 'tabs' (1 pane visible with tab navigation) | 'pdf-only'
   const [layoutMode, setLayoutMode] = useState<'split' | 'tabs' | 'pdf-only'>('split');
@@ -124,6 +125,10 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
       set(`notes_${document.id}`, notes).catch(e => console.error("Failed to save notes", e));
     }
   }, [notes, document.id, isNotesLoaded]);
+
+  useEffect(() => {
+    notesRef.current = notes;
+  }, [notes]);
 
   useEffect(() => {
     get<Record<number, AnnotationStroke[]>>(`annotations_${document.id}`)
@@ -233,6 +238,37 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     }
   };
 
+  const handleInsertRecordingNotes = (targetPage: number, editedText: string, questionHeader?: string) => {
+    const targetNote = notesRef.current[targetPage] || {
+      id: uuidv4(),
+      documentId: document.id,
+      pageNumber: targetPage,
+      content: '',
+      blocks: [],
+      aiHistory: [],
+    };
+    const existingBlocks = targetNote.blocks && targetNote.blocks.length > 0
+      ? targetNote.blocks
+      : targetNote.content?.trim()
+        ? [{ id: 'legacy-1', content: targetNote.content, createdAt: Date.now(), isAiGenerated: false }]
+        : [];
+    const updatedBlocks: NoteBlock[] = [...existingBlocks, {
+      id: uuidv4(),
+      question: questionHeader,
+      content: toRichTextHtml(editedText),
+      createdAt: Date.now(),
+      isAiGenerated: true,
+    }];
+    const nextNote: PageNote = {
+      ...targetNote,
+      blocks: updatedBlocks,
+      content: updatedBlocks.map((block) => block.question ? `### Q: ${block.question}\n${block.content}` : block.content).join('\n\n---\n\n'),
+    };
+    notesRef.current = { ...notesRef.current, [targetPage]: nextNote };
+    setNotes((current) => ({ ...current, [targetPage]: nextNote }));
+    queueCloudSave(targetPage, nextNote, annotations[targetPage] || []);
+  };
+
   const handleRemainingChange = (remaining: number, remainingPercent?: number) => {
     if (!account || !('aiRemaining' in account)) return;
     onAccountChange({
@@ -298,6 +334,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     onUpgrade,
     onAddInteraction: handleAddInteraction,
     onInsertToNotes: handleInsertToNotes,
+    onInsertRecordingNotes: handleInsertRecordingNotes,
     onReferenceSelect: handleReferenceSelect,
   };
 
@@ -323,7 +360,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-slate-50 font-sans">
       {studyMode && !studyControlsOpen && (
-        <button type="button" onClick={() => setStudyControlsOpen(true)} className="absolute left-3 top-3 z-50 grid h-10 w-10 place-items-center rounded-lg border border-white/10 bg-slate-950/90 text-white shadow-lg backdrop-blur hover:bg-slate-800" title="Show study controls" aria-label="Show study controls"><SlidersHorizontal size={18} /></button>
+        <button type="button" onClick={() => setStudyControlsOpen(true)} className="absolute left-3 top-3 z-50 flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white/95 px-3 text-sm font-semibold text-slate-700 shadow-lg backdrop-blur hover:border-indigo-300 hover:text-indigo-700" title="Show study tools" aria-label="Show study tools"><Wrench size={16} /><span>Tools</span></button>
       )}
       {/* Top Header */}
       {(!studyMode || studyControlsOpen) && <header className="flex items-center justify-between px-3 lg:px-6 py-2.5 bg-white border-b border-slate-200 shadow-2xs z-30 shrink-0 gap-2">
