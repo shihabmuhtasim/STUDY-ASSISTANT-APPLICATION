@@ -27,6 +27,7 @@ export interface NoteBlock {
   content: string;
   createdAt: number;
   isAiGenerated?: boolean;
+  source?: 'voice';
 }
 
 export interface InkAnnotation {

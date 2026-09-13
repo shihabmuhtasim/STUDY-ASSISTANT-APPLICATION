@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import DOMPurify from 'dompurify';
+import { useVoiceNotes, type VoiceJob } from './useVoiceNotes';
+import { VoiceNotesPanel, VoiceNotesDialog } from './VoiceNotesPanel';
+import { AIConnectionsModal } from './AIConnectionsModal';
+import { saveEncryptedConnection, deleteEncryptedConnection } from '../services/connectionStore';
 import { PDFViewer } from './PDFViewer';
 import { NotesPanel } from './NotesPanel';
 import { AIAssistant } from './AIAssistant';
@@ -42,6 +45,9 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   const [studyMode, setStudyMode] = useState(false);
   const [studyControlsOpen, setStudyControlsOpen] = useState(false);
   const notesRef = useRef(notes);
+  const modifiedPages = useRef(new Set<number>());
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [voiceConnectionsOpen, setVoiceConnectionsOpen] = useState(false);
 
   // Universal Layout Mode: 'split' (all 3 panes visible) | 'tabs' (1 pane visible with tab navigation) | 'pdf-only'
   const [layoutMode, setLayoutMode] = useState<'split' | 'tabs' | 'pdf-only'>('split');
@@ -114,11 +120,11 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     if (!account || !isNotesLoaded || !areAnnotationsLoaded) return;
     loadCloudWorkspace(account.userId, document.id)
       .then((cloud) => {
-        setNotes((current) => ({ ...current, ...cloud.notes }));
+        setNotes((current) => ({ ...current, ...Object.fromEntries(Object.entries(cloud.notes).filter(([page]) => !modifiedPages.current.has(Number(page)))) }));
         setAnnotations((current) => ({ ...current, ...cloud.annotations }));
       })
       .catch((error) => console.error('Failed to load cloud study data', error));
-  }, [account, document.id, isNotesLoaded, areAnnotationsLoaded]);
+  }, [account?.userId, document.id, isNotesLoaded, areAnnotationsLoaded]);
 
   // Save notes to IndexedDB whenever they change
   useEffect(() => {
@@ -180,14 +186,13 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
 
   const handleNoteChange = (content: string, blocks?: NoteBlock[]) => {
     const nextNote = {
-      ...currentNote,
+      ...(notesRef.current[activeNoteKey] || currentNote),
       content,
       blocks: blocks || currentNote.blocks || [],
     };
-    setNotes(prev => ({
-      ...prev,
-      [activeNoteKey]: nextNote,
-    }));
+    modifiedPages.current.add(activeNoteKey);
+    notesRef.current = { ...notesRef.current, [activeNoteKey]: nextNote };
+    setNotes(notesRef.current);
     queueCloudSave(activeNoteKey, nextNote, studyScope === 'document' ? [] : annotations[pageNumber] || []);
   };
 
@@ -200,13 +205,12 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
 
   const handleAddInteraction = (interaction: AIInteraction) => {
     const nextNote = {
-      ...currentNote,
-      aiHistory: [...(currentNote.aiHistory || []), interaction],
+      ...(notesRef.current[activeNoteKey] || currentNote),
+      aiHistory: [...(notesRef.current[activeNoteKey]?.aiHistory || currentNote.aiHistory || []), interaction],
     };
-    setNotes(prev => ({
-      ...prev,
-      [activeNoteKey]: nextNote,
-    }));
+    modifiedPages.current.add(activeNoteKey);
+    notesRef.current = { ...notesRef.current, [activeNoteKey]: nextNote };
+    setNotes(notesRef.current);
     queueCloudSave(activeNoteKey, nextNote, studyScope === 'document' ? [] : annotations[pageNumber] || []);
   };
 
@@ -214,7 +218,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     const newBlock: NoteBlock = {
       id: uuidv4(),
       question: questionHeader,
-      content: markdownToRichTextHtml(editedText),
+      content: toRichTextHtml(editedText),
       createdAt: Date.now(),
       isAiGenerated: true,
     };
@@ -239,7 +243,8 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     }
   };
 
-  const handleInsertRecordingNotes = (targetPage: number, editedText: string, questionHeader?: string) => {
+  const handleInsertRecordingNotes = async (job: VoiceJob, editedText: string) => {
+    const targetPage = job.pageNumber;
     const targetNote = notesRef.current[targetPage] || {
       id: uuidv4(),
       documentId: document.id,
@@ -253,9 +258,10 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
       : targetNote.content?.trim()
         ? [{ id: 'legacy-1', content: targetNote.content, createdAt: Date.now(), isAiGenerated: false }]
         : [];
-    const updatedBlocks: NoteBlock[] = [...existingBlocks, {
-      id: uuidv4(),
-      question: questionHeader,
+    const updatedBlocks: NoteBlock[] = [...existingBlocks.filter((block) => block.id !== job.id), {
+      id: job.id,
+      source: 'voice',
+      question: `Lecture notes - Page ${targetPage}`,
       content: markdownToRichTextHtml(editedText),
       createdAt: Date.now(),
       isAiGenerated: true,
@@ -265,8 +271,10 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
       blocks: updatedBlocks,
       content: updatedBlocks.map((block) => block.question ? `### Q: ${block.question}\n${block.content}` : block.content).join('\n\n---\n\n'),
     };
+    modifiedPages.current.add(targetPage);
     notesRef.current = { ...notesRef.current, [targetPage]: nextNote };
     setNotes((current) => ({ ...current, [targetPage]: nextNote }));
+    await set(`notes_${document.id}`, notesRef.current);
     queueCloudSave(targetPage, nextNote, annotations[targetPage] || []);
   };
 
@@ -280,9 +288,16 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     });
   };
 
+  const voice = useVoiceNotes({
+    userId: account?.userId, documentId: document.id, pageNumber,
+    pageText: documentPages[pageNumber - 1] || '',
+    onSave: handleInsertRecordingNotes,
+  });
+  const voicePending = voice.jobs.filter((job) => job.status !== 'saved').length;
+  const openVoicePage = (page: number) => { setStudyScope('page'); setPageNumber(page); setLayoutMode('tabs'); setActiveTab('notes'); setVoiceOpen(false); };
   const voiceNotes = Object.values(notes)
     .flatMap((note) => (note.blocks || [])
-      .filter((block) => block.isAiGenerated && block.question?.startsWith('Lecture notes - Page '))
+      .filter((block) => block.source === 'voice' || (block.isAiGenerated && block.question?.startsWith('Lecture notes - Page ')))
       .map((block) => ({ pageNumber: note.pageNumber, block })))
     .sort((left, right) => left.pageNumber - right.pageNumber || left.block.createdAt - right.block.createdAt);
 
@@ -341,7 +356,9 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     onUpgrade,
     onAddInteraction: handleAddInteraction,
     onInsertToNotes: handleInsertToNotes,
-    onInsertRecordingNotes: handleInsertRecordingNotes,
+    onVoiceControls: () => setVoiceOpen(true),
+    voiceActive: voice.session.phase !== 'idle',
+    voicePending,
     onReferenceSelect: handleReferenceSelect,
   };
 
@@ -588,10 +605,8 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
               <AIAssistant {...aiAssistantProps} />
             </div>
 
-            {activeTab === 'voice' && <div className="h-full w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xs">
-              <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4"><div><h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900"><Mic size={17} className="text-violet-600" />Voice Notes</h3><p className="mt-1 text-xs text-slate-500">Lecture notes created from recordings, organized by PDF page.</p></div><span className="text-xs font-semibold text-violet-700">{voiceNotes.length} note{voiceNotes.length === 1 ? '' : 's'}</span></div>
-              {voiceNotes.length === 0 ? <div className="grid min-h-72 place-items-center px-6 text-center"><div><Mic size={28} className="mx-auto text-violet-400" /><p className="mt-3 text-sm font-semibold text-slate-800">No voice notes yet</p><p className="mt-1 text-xs text-slate-500">Open AI Assistant and use its microphone button to record this page or record automatically as pages change.</p><button type="button" onClick={() => setActiveTab('ai')} className="mt-4 rounded-md bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-700">Open voice controls</button></div></div> : <div className="space-y-3 p-4">{voiceNotes.map(({ pageNumber: voicePage, block }) => <article key={block.id} className="rounded-lg border border-violet-100 bg-violet-50/40 p-4"><div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase text-violet-600">Page {voicePage}</p><h4 className="mt-0.5 text-sm font-semibold text-slate-900">{block.question || `Lecture notes - Page ${voicePage}`}</h4></div><button type="button" onClick={() => { setPageNumber(voicePage); setActiveTab('notes'); }} className="shrink-0 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:border-violet-300 hover:text-violet-700">Open page notes</button></div><div className="rich-note-content text-sm leading-relaxed text-slate-700" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(toRichTextHtml(block.content)) }} /></article>)}</div>}
-            </div>}
+            {activeTab === 'voice' && <VoiceNotesPanel voice={voice} pageNumber={pageNumber} notes={voiceNotes} onManage={() => setVoiceConnectionsOpen(true)} onOpenPage={openVoicePage} />}
+
           </div>
         ) : (
           /* 3-Pane Split View - Visible simultaneously on laptop, desktop, tablet, or mobile */
@@ -639,6 +654,17 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
           </PanelGroup>
         )}
       </main>
+      {(voice.session.phase !== 'idle' || voice.jobs.length > 0) && <div className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-2 text-xs text-slate-700" role="status">
+        <button type="button" onClick={() => setVoiceOpen(true)} className="flex min-w-0 items-center gap-2 text-left"><Mic size={14} className={voice.session.phase !== 'idle' ? 'text-red-600' : 'text-indigo-600'} /><span>{voice.session.phase === 'recording' ? `Recording page ${voice.session.segment?.pageNumber}` : voice.session.phase === 'starting' ? 'Starting microphone...' : voice.session.phase === 'finishing' ? 'Finishing page recording...' : 'Voice Notes'} · {voiceNotes.length} saved{voicePending > 0 ? ` · ${voicePending} pending / needs attention` : ''}</span></button>
+        {voice.session.phase !== 'idle' && <button type="button" onClick={voice.stop} disabled={voice.session.phase === 'finishing'} className="rounded-md border border-slate-200 px-3 py-1 font-semibold text-red-700">Stop</button>}
+      </div>}
+      <VoiceNotesDialog open={voiceOpen} onClose={() => setVoiceOpen(false)}>
+        <VoiceNotesPanel voice={voice} pageNumber={pageNumber} notes={voiceNotes} onManage={() => { setVoiceOpen(false); setVoiceConnectionsOpen(true); }} onOpenPage={openVoicePage} />
+      </VoiceNotesDialog>
+      <AIConnectionsModal isOpen={voiceConnectionsOpen} connections={voice.connections} selectedId={voice.selectedId} onSelect={voice.select}
+        onSave={async (connection) => { await saveEncryptedConnection(connection); await voice.refreshConnections(); }}
+        onDelete={async (id) => { await deleteEncryptedConnection(id); await voice.refreshConnections(); }}
+        onClose={() => setVoiceConnectionsOpen(false)} />
     </div>
   );
 }

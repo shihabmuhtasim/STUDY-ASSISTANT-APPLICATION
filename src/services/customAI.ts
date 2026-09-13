@@ -21,6 +21,7 @@ async function authenticatedRequest(path: string, init: RequestInit, timeoutMs =
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
+  let data: { error?: string; response?: string; provider?: 'custom'; model?: string };
   try {
     response = await fetch(path, {
       ...init,
@@ -31,13 +32,13 @@ async function authenticatedRequest(path: string, init: RequestInit, timeoutMs =
         ...init.headers,
       },
     });
+    data = await response.json();
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw new AIRequestError(`The provider did not respond within ${Math.round(timeoutMs / 1_000)} seconds.`, 'CUSTOM_TIMEOUT', 504);
     throw error;
   } finally {
     window.clearTimeout(timeout);
   }
-  const data = await response.json().catch(() => ({})) as { error?: string; response?: string; provider?: 'custom'; model?: string };
   if (!response.ok) throw new AIRequestError(data.error || `Provider returned ${response.status}.`, `CUSTOM_${response.status}`, response.status);
   return data;
 }

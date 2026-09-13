@@ -27,52 +27,10 @@ interface AIAssistantProps {
   onUpgrade: () => void;
   onAddInteraction: (interaction: AIInteraction) => void;
   onInsertToNotes: (text: string, questionHeader?: string) => void;
-  onInsertRecordingNotes: (pageNumber: number, text: string, questionHeader?: string) => void;
+  onVoiceControls: () => void;
+  voiceActive: boolean;
+  voicePending: number;
   onReferenceSelect: (reference: AISourceReference) => void;
-}
-
-interface SpeechRecognitionAlternativeLike {
-  transcript: string;
-}
-
-interface SpeechRecognitionResultLike {
-  isFinal: boolean;
-  0: SpeechRecognitionAlternativeLike;
-}
-
-interface SpeechRecognitionEventLike extends Event {
-  resultIndex: number;
-  results: ArrayLike<SpeechRecognitionResultLike>;
-}
-
-interface SpeechRecognitionErrorEventLike extends Event {
-  error: string;
-}
-
-interface BrowserSpeechRecognition {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
-  onend: (() => void) | null;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-}
-
-type SpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
-
-function getSpeechRecognition() {
-  const browserWindow = window as typeof window & {
-    SpeechRecognition?: SpeechRecognitionConstructor;
-    webkitSpeechRecognition?: SpeechRecognitionConstructor;
-  };
-  return browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition;
-}
-
-function lectureNotesPrompt(transcript: string) {
-  return `Create clear class notes using both the lecture transcription and the supplied PDF page content. Keep the lecturer's terminology and explanations where useful. Explain the slide through the lecturer's explanation, and capture examples, definitions, warnings, comparisons, and every important point said aloud. Do not invent details. Organize the notes with short headings and bullet points. Do not mention these instructions.\n\nLecture transcription:\n${transcript.slice(0, 20_000)}`;
 }
 
 const pageQuickPrompts = ['Summarize this page', 'Explain the key ideas', 'Create 3 quiz questions'];
@@ -147,7 +105,9 @@ export function AIAssistant({
   onUpgrade,
   onAddInteraction,
   onInsertToNotes,
-  onInsertRecordingNotes,
+  onVoiceControls,
+  voiceActive,
+  voicePending,
   onReferenceSelect,
 }: AIAssistantProps) {
   const [prompt, setPrompt] = useState('');
@@ -168,22 +128,9 @@ export function AIAssistant({
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [rangeMenuOpen, setRangeMenuOpen] = useState(false);
-  const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
-  const [voiceHelpOpen, setVoiceHelpOpen] = useState(false);
-  const [recordingMode, setRecordingMode] = useState<'page' | 'continuous' | null>(null);
-  const [recordingPage, setRecordingPage] = useState<number | null>(null);
-  const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
-  const [voiceJobs, setVoiceJobs] = useState(0);
   const assistantRef = useRef<HTMLDivElement>(null);
   const modelTriggerRef = useRef<HTMLButtonElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
-  const transcriptRef = useRef('');
-  const interimTranscriptRef = useRef('');
-  const continuousRecordingRef = useRef(false);
-  const recordingSnapshotRef = useRef<{ pageNumber: number; connectionId: string } | null>(null);
-  const latestPageRef = useRef({ pageNumber, pageText, documentPages });
-  const previousPageRef = useRef(pageNumber);
   const [modelMenuMaxHeight, setModelMenuMaxHeight] = useState(288);
   const [insertModalState, setInsertModalState] = useState({ isOpen: false, promptQuestion: '', aiResponse: '' });
   const hasProAccess = Boolean(account && 'plan' in account && account.plan === 'pro');
@@ -388,133 +335,6 @@ export function AIAssistant({
     ? activeConnection?.name || 'Custom model'
     : modelOptions.find((option) => option.value === modelPreference)?.label || 'Auto · Best available';
 
-  const processVoiceTranscript = async (snapshot: { pageNumber: number; connectionId: string }, transcript: string) => {
-    const connection = connections.find((item) => item.id === snapshot.connectionId);
-    if (!connection) {
-      setVoiceNotice('The selected Custom API connection is no longer available.');
-      return;
-    }
-    const current = latestPageRef.current;
-    const recordedPageText = current.documentPages[snapshot.pageNumber - 1]
-      || (current.pageNumber === snapshot.pageNumber ? current.pageText : '');
-    setVoiceNotice(null);
-    setVoiceJobs((count) => count + 1);
-    try {
-      const result = await askCustomAI({
-        connection,
-        prompt: lectureNotesPrompt(transcript),
-        pageNumber: snapshot.pageNumber,
-        pageText: recordedPageText,
-        documentContext: `[Page ${snapshot.pageNumber}]\n${recordedPageText}`,
-        scope: 'page',
-        referencesEnabled: false,
-        history: [],
-      });
-      onInsertRecordingNotes(snapshot.pageNumber, normalizeModelResponse(result.response), `Lecture notes - Page ${snapshot.pageNumber}`);
-      setVoiceNotice(`Lecture notes were added to page ${snapshot.pageNumber}.`);
-    } catch (voiceError) {
-      setVoiceNotice(voiceError instanceof Error ? voiceError.message : 'Your Custom API could not create the lecture notes.');
-    } finally {
-      setVoiceJobs((count) => Math.max(0, count - 1));
-    }
-  };
-
-  const startVoiceRecording = (mode: 'page' | 'continuous') => {
-    if (recognitionRef.current) return;
-    const connection = connections.find((item) => item.id === selectedConnectionId) || connections[0];
-    if (!connection) {
-      setVoiceNotice('Add a Custom API connection before recording. Voice notes never use the shared AI allowance.');
-      setConnectionsOpen(true);
-      return;
-    }
-    const SpeechRecognition = getSpeechRecognition();
-    if (!SpeechRecognition) {
-      setVoiceNotice('Voice transcription is not supported in this browser. Use the latest Chrome or Edge.');
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    const snapshot = { pageNumber: latestPageRef.current.pageNumber, connectionId: connection.id };
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = navigator.language || 'en-US';
-    transcriptRef.current = '';
-    interimTranscriptRef.current = '';
-    recordingSnapshotRef.current = snapshot;
-    continuousRecordingRef.current = mode === 'continuous';
-    recognitionRef.current = recognition;
-    setRecordingMode(mode);
-    setRecordingPage(snapshot.pageNumber);
-    setVoiceNotice(null);
-
-    recognition.onresult = (event) => {
-      let interim = '';
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        const text = result[0]?.transcript || '';
-        if (result.isFinal) transcriptRef.current += `${text} `;
-        else interim += text;
-      }
-      interimTranscriptRef.current = interim;
-    };
-    recognition.onerror = (event) => {
-      if (event.error === 'aborted' || event.error === 'no-speech') return;
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-        continuousRecordingRef.current = false;
-        setVoiceNotice('Microphone access was blocked. Allow microphone access and try again.');
-      } else {
-        setVoiceNotice(`Voice transcription stopped: ${event.error}.`);
-      }
-    };
-    recognition.onend = () => {
-      const finishedSnapshot = recordingSnapshotRef.current;
-      const finishedTranscript = `${transcriptRef.current} ${interimTranscriptRef.current}`.trim();
-      const shouldContinue = continuousRecordingRef.current;
-      recognitionRef.current = null;
-      recordingSnapshotRef.current = null;
-      transcriptRef.current = '';
-      interimTranscriptRef.current = '';
-      if (finishedSnapshot && finishedTranscript) void processVoiceTranscript(finishedSnapshot, finishedTranscript);
-      else if (!shouldContinue) setVoiceNotice('No speech was detected in this recording.');
-
-      if (shouldContinue) {
-        window.setTimeout(() => startVoiceRecording('continuous'), 120);
-      } else {
-        setRecordingMode(null);
-        setRecordingPage(null);
-      }
-    };
-
-    try {
-      recognition.start();
-    } catch {
-      recognitionRef.current = null;
-      continuousRecordingRef.current = false;
-      setRecordingMode(null);
-      setRecordingPage(null);
-      setVoiceNotice('Voice recording could not start. Check microphone permission and try again.');
-    }
-  };
-
-  const stopVoiceRecording = () => {
-    continuousRecordingRef.current = false;
-    setVoiceNotice('Finishing the transcription...');
-    recognitionRef.current?.stop();
-  };
-
-  useEffect(() => {
-    latestPageRef.current = { pageNumber, pageText, documentPages };
-    if (previousPageRef.current !== pageNumber) {
-      previousPageRef.current = pageNumber;
-      if (recognitionRef.current) recognitionRef.current.stop();
-    }
-  }, [documentPages, pageNumber, pageText]);
-
-  useEffect(() => () => {
-    continuousRecordingRef.current = false;
-    recognitionRef.current?.abort();
-  }, []);
-
   const chooseModel = (value: AIModelPreference) => {
     setModelPreference(value);
     setModelMenuOpen(false);
@@ -522,6 +342,7 @@ export function AIAssistant({
 
   const saveConnection = async (connection: CustomAIConnection) => {
     const saved = await saveEncryptedConnection(connection);
+    window.dispatchEvent(new Event('study-ai-connections-changed'));
     setConnections((current) => current.some((item) => item.id === saved.id)
       ? current.map((item) => item.id === saved.id ? saved : item)
       : [...current, saved]);
@@ -529,6 +350,7 @@ export function AIAssistant({
 
   const deleteConnection = async (id: string) => {
     await deleteEncryptedConnection(id);
+    window.dispatchEvent(new Event('study-ai-connections-changed'));
     setConnections((current) => {
       const next = current.filter((item) => item.id !== id);
       if (selectedConnectionId === id) {
@@ -551,23 +373,16 @@ export function AIAssistant({
           <button type="button" onClick={() => setIncludeImage((enabled) => !enabled)} disabled={!hasProAccess || !pageImage || scope === 'document'} className={`grid h-8 w-8 place-items-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${includeImage ? 'border-indigo-300 bg-indigo-100 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:text-indigo-700'}`} title={includeImage ? 'Page image is included' : 'Include the current page image'} aria-label="Include page image" aria-pressed={includeImage}><ImageIcon size={15} /></button>
           <button type="button" onClick={() => setReferencesEnabled((enabled) => !enabled)} className={`grid h-8 w-8 place-items-center rounded-md border transition-colors ${referencesEnabled ? 'border-indigo-300 bg-indigo-100 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:text-indigo-700'}`} title={referencesEnabled ? 'References are enabled' : 'Add clickable PDF references'} aria-label="References" aria-pressed={referencesEnabled}><Quote size={15} /></button>
           <div className="relative">
-            <button type="button" onClick={() => { setRangeMenuOpen((open) => !open); setVoiceMenuOpen(false); setVoiceHelpOpen(false); }} className={`grid h-8 w-8 place-items-center rounded-md border transition-colors ${manualRangeEnabled ? 'border-indigo-300 bg-indigo-100 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:text-indigo-700'}`} title="Choose which PDF pages the AI should use" aria-label="Manual page range" aria-expanded={rangeMenuOpen}><ListFilter size={15} /></button>
+            <button type="button" onClick={() => { setRangeMenuOpen((open) => !open); }} className={`grid h-8 w-8 place-items-center rounded-md border transition-colors ${manualRangeEnabled ? 'border-indigo-300 bg-indigo-100 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:text-indigo-700'}`} title="Choose which PDF pages the AI should use" aria-label="Manual page range" aria-expanded={rangeMenuOpen}><ListFilter size={15} /></button>
             {rangeMenuOpen && <div className="absolute right-0 top-10 z-50 w-64 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-xl">
               <label className="flex cursor-pointer items-center gap-2 font-semibold text-slate-700"><input type="checkbox" checked={manualRangeEnabled} onChange={(event) => setManualRangeEnabled(event.target.checked)} className="accent-indigo-600" />Use a manual page range</label>
               <p className="mt-1 text-[11px] text-slate-500">Limit answers to consecutive pages you choose.</p>
               {manualRangeEnabled && <div className="mt-3 flex items-center gap-1.5"><span>Pages</span><input type="number" min={1} max={maxPage} value={rangeStart} onChange={(event) => { const next = Math.max(1, Math.min(maxPage, Number(event.target.value) || 1)); setRangeStart(next); setRangeEnd((current) => Math.max(current, next)); }} className="h-8 w-14 rounded border border-slate-200 px-1.5 text-center" aria-label="First context page" /><span>to</span><input type="number" min={rangeStart} max={maxPage} value={rangeEnd} onChange={(event) => setRangeEnd(Math.max(rangeStart, Math.min(maxPage, Number(event.target.value) || rangeStart)))} className="h-8 w-14 rounded border border-slate-200 px-1.5 text-center" aria-label="Last context page" /><span>of {maxPage}</span></div>}
             </div>}
           </div>
-          <div className="relative flex items-center gap-0.5">
-            <button type="button" onClick={() => { setVoiceMenuOpen((open) => !open); setVoiceHelpOpen(false); setRangeMenuOpen(false); }} className={`relative grid h-8 w-8 place-items-center rounded-md border transition-colors ${recordingMode ? 'border-red-300 bg-red-50 text-red-700' : voiceJobs > 0 ? 'border-indigo-300 bg-indigo-100 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:text-indigo-700'}`} title="Lecture voice notes" aria-label="Lecture voice notes" aria-expanded={voiceMenuOpen}><Mic size={15} />{recordingMode && <span className="absolute right-1 top-1 h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />}</button>
-            <button type="button" onClick={() => { setVoiceHelpOpen((open) => !open); setVoiceMenuOpen(false); setRangeMenuOpen(false); }} className="grid h-8 w-7 place-items-center rounded-md text-slate-400 hover:bg-white hover:text-indigo-700" title="How voice notes work" aria-label="How voice notes work" aria-expanded={voiceHelpOpen}><HelpCircle size={15} /></button>
-            {voiceHelpOpen && <div className="absolute right-0 top-10 z-50 w-72 rounded-lg border border-slate-200 bg-white p-3 text-xs leading-relaxed text-slate-600 shadow-xl">Your browser transcribes the lecture. NoteMyDoc combines that transcript with the current PDF page and sends it only to your selected Custom API. Shared AI usage is never consumed.</div>}
-            {voiceMenuOpen && <div className="absolute right-0 top-10 z-50 w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
-              <div className="flex items-center justify-between gap-2"><div><p className="text-xs font-semibold text-slate-800">Lecture voice notes</p><p className="mt-0.5 text-[11px] text-slate-500">Custom API required</p></div><button type="button" onClick={() => setConnectionsOpen(true)} className="max-w-32 truncate rounded-md border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:border-indigo-300">{activeConnection?.name || 'Add Custom API'}</button></div>
-              {recordingMode ? <button type="button" onClick={stopVoiceRecording} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700"><Square size={12} fill="currentColor" />Stop and create notes</button> : activeConnection ? <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={() => { startVoiceRecording('page'); setVoiceMenuOpen(false); }} className="inline-flex items-center justify-center gap-1.5 rounded-md border border-indigo-200 px-2 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"><Mic size={13} />This page</button><button type="button" onClick={() => { startVoiceRecording('continuous'); setVoiceMenuOpen(false); }} className="inline-flex items-center justify-center gap-1.5 rounded-md bg-indigo-600 px-2 py-2 text-xs font-semibold text-white hover:bg-indigo-700"><Radio size={13} />Auto by page</button></div> : <button type="button" onClick={() => setConnectionsOpen(true)} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"><KeyRound size={13} />Add Custom API to record</button>}
-              {(recordingMode || voiceJobs > 0) && <p className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-500" aria-live="polite">{recordingMode ? <><span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />Recording page {recordingPage}{recordingMode === 'continuous' ? ' - auto by page' : ''}</> : <><Loader2 size={12} className="animate-spin text-indigo-600" />Creating voice notes...</>}</p>}
-              {voiceNotice && <p className="mt-2 text-[11px] text-slate-600" aria-live="polite">{voiceNotice}</p>}
-            </div>}
+          <div className="flex items-center gap-0.5">
+            <button type="button" onClick={onVoiceControls} className={`relative grid h-8 w-8 place-items-center rounded-md border ${voiceActive ? 'border-red-300 bg-red-50 text-red-700' : 'border-slate-200 bg-white text-slate-500'}`} title="Open lecture recording and voice notes" aria-label="Lecture voice notes"><Mic size={15} />{(voiceActive || voicePending > 0) && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-red-500" />}</button>
+            <button type="button" onClick={onVoiceControls} className="grid h-8 w-7 place-items-center text-slate-400" title="Transcribe lectures and create page notes using your Custom API only. Auto by page saves each page and continues on the next." aria-label="How voice notes work"><HelpCircle size={15} /></button>
           </div>
         </div>
       </div>
