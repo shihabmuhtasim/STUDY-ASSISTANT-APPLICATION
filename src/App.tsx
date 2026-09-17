@@ -449,6 +449,7 @@ export default function App({ initialAccount }: AppProps) {
       <div className={currentDocument ? 'min-h-0 flex-1' : 'flex-1'}>
       {currentDocument ? (
         <StudyInterface
+          key={currentDocument.id}
           document={currentDocument}
           onBack={handleOpenLibrary}
           account={account}

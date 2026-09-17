@@ -181,7 +181,27 @@ export class VoiceSession {
 }
 
 export function lecturePrompt(transcript: string) {
-  return `Take class notes from this lecture transcription and the supplied PDF page. Explain the slide using the lecturer's explanation. Keep their terminology and wording where useful. Include examples, definitions, comparisons, warnings and important details. Clearly distinguish anything said beyond the slide. Do not invent details. Use short headings and bullet points.\n\nLecture transcription:\n${transcript}`;
+  return `Act as an elite academic tutor distilling a live lecture into definitive, structured Cornell-style notes.
+
+You are provided with:
+1. The text of a single slide/page from the course material.
+2. The raw, potentially messy voice transcript of the professor's spoken lecture corresponding to this page.
+
+Your objective is to produce clear, comprehensive, and highly structured study notes that fuse the slide's foundation with the professor's nuanced explanations.
+
+RULES & FORMATTING:
+- USE CORNELL-STYLE STRUCTURE: Divide the content into distinct logical themes using clear headings.
+- CAPTURE NUANCE: The transcript often contains the "why" and "how" that the slide lacks. Pay special attention to examples, analogies, emphasis, and warnings given by the speaker.
+- BULLET POINTS: Use nested bullet points extensively for readability.
+- CLEAR DISTINCTION: Explicitly highlight key insights that were spoken but not explicitly written on the slide (e.g., using a sub-bullet "🗣️ Speaker's Insight:").
+- MATHEMATICAL/SCIENTIFIC NOTATION: DO NOT use LaTeX dollar signs ($ or $$). Write out math using plain Unicode characters (e.g., x^2, α, β, ->, =).
+- CONCISENESS: Remove filler words from the transcript, but never omit technical details.
+- DO NOT invent information. Rely strictly on the provided page text and the lecture transcript.
+
+Lecture Transcript:
+"""
+${transcript}
+"""`;
 }
 
 export function transcriptChunks(transcript: string, limit = 16000): string[] {

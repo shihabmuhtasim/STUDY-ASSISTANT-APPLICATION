@@ -105,7 +105,10 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
       try {
         const savedNotes = await get(`notes_${document.id}`);
         if (savedNotes) {
-          setNotes(savedNotes);
+          const filtered = Object.fromEntries(
+            Object.entries(savedNotes).filter(([, note]) => !(note as PageNote).documentId || (note as PageNote).documentId === document.id)
+          );
+          setNotes(filtered as Record<number, PageNote>);
         }
       } catch (e) {
         console.error("Failed to load notes", e);

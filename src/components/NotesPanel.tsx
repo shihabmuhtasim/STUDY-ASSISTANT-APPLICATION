@@ -47,11 +47,18 @@ export function NotesPanel({ note, title, defaultHeading = '', onDefaultHeadingC
     },
   });
 
-  const blocks: NoteBlock[] = note.blocks?.length
+  const [filterMode, setFilterMode] = useState<'notes' | 'voice'>('notes');
+
+  const allBlocks: NoteBlock[] = note.blocks?.length
     ? note.blocks
     : note.content?.trim()
       ? [{ id: 'legacy-1', content: note.content, createdAt: Date.now(), isAiGenerated: false }]
       : [];
+
+  const voiceBlocks = allBlocks.filter(b => b.source === 'voice' || (b.isAiGenerated && b.question?.startsWith('Lecture notes')));
+  const textBlocks = allBlocks.filter(b => !(b.source === 'voice' || (b.isAiGenerated && b.question?.startsWith('Lecture notes'))));
+
+  const blocks = filterMode === 'voice' ? voiceBlocks : textBlocks;
 
   useEffect(() => setHeadingDraft(defaultHeading), [defaultHeading]);
 
@@ -60,8 +67,10 @@ export function NotesPanel({ note, title, defaultHeading = '', onDefaultHeadingC
   draftRef.current = { newTitle, newContent, blocks };
 
   const saveBlocks = (updated: NoteBlock[]) => {
-    const plainText = updated.map((block) => `${block.question ? `${block.question}\n` : ''}${richTextToPlainText(toRichTextHtml(block.content))}`).join('\n\n');
-    onChange(plainText, updated);
+    const hiddenBlocks = filterMode === 'voice' ? textBlocks : voiceBlocks;
+    const combined = [...hiddenBlocks, ...updated].sort((a, b) => a.createdAt - b.createdAt);
+    const plainText = combined.map((block) => `${block.question ? `${block.question}\n` : ''}${richTextToPlainText(toRichTextHtml(block.content))}`).join('\n\n');
+    onChange(plainText, combined);
   };
 
   // When switching pages: auto-commit any pending typed note and ensure editor is ready for the new page
@@ -140,16 +149,29 @@ export function NotesPanel({ note, title, defaultHeading = '', onDefaultHeadingC
 
   return (
     <div className="notes-panel flex h-full flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xs">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 p-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <FileText size={18} className="shrink-0 text-emerald-600" />
-          <h3 className="truncate text-sm font-semibold text-slate-800">{title || `Notes for Page ${note.pageNumber}`}</h3>
-          <span className="text-xs text-slate-400">{blocks.length}</span>
+      <div className="flex shrink-0 flex-col gap-2 border-b border-slate-200 bg-slate-50 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <FileText size={18} className="shrink-0 text-emerald-600" />
+            <h3 className="truncate text-sm font-semibold text-slate-800">{title || `Notes for Page ${note.pageNumber}`}</h3>
+            <span className="text-xs text-slate-400">{allBlocks.length}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={() => setHeadingSettingsOpen((value) => !value)} className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-emerald-600" title="Set a default heading for new note cards" aria-expanded={headingSettingsOpen}><Settings2 size={16} /></button>
+            <button type="button" onClick={onClear} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" title={`Clear ${title ? 'whole-document' : 'page'} notes`}><Trash2 size={16} /></button>
+            <button type="button" onClick={onSave} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"><Save size={14} /> Save</button>
+          </div>
         </div>
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={() => setHeadingSettingsOpen((value) => !value)} className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-emerald-600" title="Set a default heading for new note cards" aria-expanded={headingSettingsOpen}><Settings2 size={16} /></button>
-          <button type="button" onClick={onClear} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" title={`Clear ${title ? 'whole-document' : 'page'} notes`}><Trash2 size={16} /></button>
-          <button type="button" onClick={onSave} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"><Save size={14} /> Save</button>
+
+        <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-100/50 p-0.5">
+          <button type="button" onClick={() => setFilterMode('notes')} className={`flex flex-1 items-center justify-center gap-2 rounded-md py-1 text-xs font-semibold transition-colors ${filterMode === 'notes' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'}`}>
+            Manual / AI
+            {textBlocks.length > 0 && <span className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${filterMode === 'notes' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>{textBlocks.length}</span>}
+          </button>
+          <button type="button" onClick={() => setFilterMode('voice')} className={`flex flex-1 items-center justify-center gap-2 rounded-md py-1 text-xs font-semibold transition-colors ${filterMode === 'voice' ? 'bg-white text-violet-700 shadow-sm border border-slate-200' : 'text-slate-600 hover:text-slate-900'}`}>
+            Voice
+            {voiceBlocks.length > 0 && <span className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${filterMode === 'voice' ? 'bg-violet-100 text-violet-700' : 'bg-slate-200 text-slate-500'}`}>{voiceBlocks.length}</span>}
+          </button>
         </div>
       </div>
 

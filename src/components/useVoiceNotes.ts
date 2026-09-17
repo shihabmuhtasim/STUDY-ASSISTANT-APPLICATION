@@ -47,14 +47,21 @@ export function useVoiceNotes(options: {
     try {
       if (!job.transcript.trim()) throw new Error('No speech was detected. Check the live transcript and microphone, then record again.');
       await update(job);
-      const connection = latest.current.connections.find((item) => item.id === job.connectionId);
-      if (!connection) throw new Error('Custom API unavailable. Select a connection and retry. Your transcript is kept.');
+      const isBuiltin = job.connectionId === 'builtin';
+      const connection = !isBuiltin ? latest.current.connections.find((item) => item.id === job.connectionId) : undefined;
+      if (!isBuiltin && !connection) throw new Error('Custom API unavailable. Select a connection and retry. Your transcript is kept.');
       const chunks = transcriptChunks(job.transcript);
       for (let part = job.parts.length; part < chunks.length; part += 1) {
-        // Never use the shared AI router or fallback for lecture recordings.
-        const result = await askCustomAI({ connection, prompt: lecturePrompt(chunks[part]),
-          pageNumber: job.pageNumber, pageText: job.pageText, documentContext: `[Page ${job.pageNumber}]\n${job.pageText}`,
-          scope: 'page', referencesEnabled: false, history: [] });
+        const result = isBuiltin
+          ? await import('../services/ai').then(m => m.askAIAboutPage({
+              prompt: lecturePrompt(chunks[part]),
+              pageNumber: job.pageNumber, pageText: job.pageText, documentContext: `[Page ${job.pageNumber}]\n${job.pageText}`,
+              scope: 'page', referencesEnabled: false, history: [],
+              modelPreference: 'auto', allowFallback: true
+            }))
+          : await askCustomAI({ connection: connection!, prompt: lecturePrompt(chunks[part]),
+              pageNumber: job.pageNumber, pageText: job.pageText, documentContext: `[Page ${job.pageNumber}]\n${job.pageText}`,
+              scope: 'page', referencesEnabled: false, history: [] });
         if (run !== generation.current) return;
         job = { ...job, parts: [...job.parts, result.response] };
         await update(job);
@@ -74,8 +81,8 @@ export function useVoiceNotes(options: {
     try {
       const saved = await loadSavedConnections();
       setConnections(saved);
-      setSelectedId((current) => saved.some((item) => item.id === current) ? current
-        : saved.find((item) => item.id === window.sessionStorage.getItem('study-assistant-session-selected-ai-connection'))?.id || saved[0]?.id || null);
+      setSelectedId((current) => saved.some((item) => item.id === current) || current === 'builtin' ? current
+        : saved.find((item) => item.id === window.sessionStorage.getItem('study-assistant-session-selected-ai-connection'))?.id || saved[0]?.id || 'builtin');
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Could not load Custom API connections.'); }
   };
   useEffect(() => {
@@ -86,6 +93,8 @@ export function useVoiceNotes(options: {
 
   useEffect(() => {
     const run = ++generation.current;
+    jobsRef.current = [];
+    setJobs([]);
     setReady(false);
     const voice = new VoiceSession({
       createEngine: () => {
