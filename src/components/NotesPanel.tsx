@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, Check, Edit2, FileText, GripVertical, Plus, Save, Settings2, Sparkles, Trash2, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ArrowDown, ArrowUp, Check, Edit2, FileText, GripVertical, Mic, MicOff, Plus, Save, Settings2, Sparkles, Trash2, X } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { v4 as uuidv4 } from 'uuid';
 import { NoteBlock, PageNote } from '../types';
 import { RichTextEditor, richTextToPlainText, toRichTextHtml } from './RichTextEditor';
+import { useSpeechTranscription } from '../hooks/useSpeechTranscription';
 
 interface NotesPanelProps {
   note: PageNote;
@@ -19,12 +20,32 @@ export function NotesPanel({ note, title, defaultHeading = '', onDefaultHeadingC
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
-  const [adding, setAdding] = useState(() => !(note.blocks?.length || note.content?.trim()));
+  // Auto set and add note ready when navigating to any page
+  const [adding, setAdding] = useState(true);
   const [newTitle, setNewTitle] = useState(defaultHeading);
   const [newContent, setNewContent] = useState('');
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [headingSettingsOpen, setHeadingSettingsOpen] = useState(false);
   const [headingDraft, setHeadingDraft] = useState(defaultHeading);
+
+  // Speech to text dictation for new note cards
+  const {
+    isSupported: isSpeechSupported,
+    isListening,
+    toggleListening,
+    stopListening,
+  } = useSpeechTranscription({
+    onTranscript: (spokenText) => {
+      if (!spokenText.trim()) return;
+      setNewContent((prev) => {
+        const cleanPrev = prev.trim();
+        if (!cleanPrev || cleanPrev === '<p></p>' || cleanPrev === '<p><br></p>') {
+          return `<p>${spokenText}</p>`;
+        }
+        return `${cleanPrev} <p>${spokenText}</p>`;
+      });
+    },
+  });
 
   const blocks: NoteBlock[] = note.blocks?.length
     ? note.blocks
@@ -34,10 +55,40 @@ export function NotesPanel({ note, title, defaultHeading = '', onDefaultHeadingC
 
   useEffect(() => setHeadingDraft(defaultHeading), [defaultHeading]);
 
+  // Keep a reference to latest draft and blocks so we can auto-save on page switch or unmount
+  const draftRef = useRef({ newTitle, newContent, blocks });
+  draftRef.current = { newTitle, newContent, blocks };
+
   const saveBlocks = (updated: NoteBlock[]) => {
     const plainText = updated.map((block) => `${block.question ? `${block.question}\n` : ''}${richTextToPlainText(toRichTextHtml(block.content))}`).join('\n\n');
     onChange(plainText, updated);
   };
+
+  // When switching pages: auto-commit any pending typed note and ensure editor is ready for the new page
+  useEffect(() => {
+    setAdding(true);
+    setNewTitle(defaultHeading);
+    setNewContent('');
+  }, [note.pageNumber, defaultHeading]);
+
+  // Auto-save any typed note content before unmounting or switching pages
+  useEffect(() => {
+    return () => {
+      stopListening();
+      const { newTitle: draftTitle, newContent: draftContent, blocks: currentBlocks } = draftRef.current;
+      const plain = richTextToPlainText(draftContent).trim();
+      if (plain) {
+        const autoBlock: NoteBlock = {
+          id: uuidv4(),
+          question: draftTitle.trim() || undefined,
+          content: draftContent,
+          createdAt: Date.now(),
+          isAiGenerated: false,
+        };
+        saveBlocks([...currentBlocks, autoBlock]);
+      }
+    };
+  }, [stopListening]);
 
   const move = (index: number, direction: -1 | 1) => {
     const destination = index + direction;
@@ -83,7 +134,8 @@ export function NotesPanel({ note, title, defaultHeading = '', onDefaultHeadingC
     }]);
     setNewTitle(defaultHeading);
     setNewContent('');
-    setAdding(false);
+    // Remain open and ready for the next note on this page
+    setAdding(true);
   };
 
   return (
@@ -150,14 +202,45 @@ export function NotesPanel({ note, title, defaultHeading = '', onDefaultHeadingC
           ))}
 
           {adding ? (
-            <div className="note-editor-surface space-y-3 rounded-lg border border-emerald-200 bg-white p-3 shadow-xs">
-              <div className="flex items-center justify-between"><h4 className="text-sm font-semibold text-slate-800">New note card</h4><button type="button" onClick={() => setAdding(false)} className="p-1 text-slate-400" aria-label="Cancel new note"><X size={16} /></button></div>
-              <input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="Title (optional)" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold outline-none focus:border-emerald-500" />
+            <div className="note-editor-surface space-y-3 rounded-lg border border-emerald-300 bg-white p-3 shadow-xs">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-700">Write page note</h4>
+                <div className="flex items-center gap-1.5">
+                  {isSpeechSupported && (
+                    <button
+                      type="button"
+                      onClick={toggleListening}
+                      className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition-colors ${
+                        isListening
+                          ? 'bg-red-100 text-red-700 animate-pulse border border-red-300'
+                          : 'bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'
+                      }`}
+                      title={isListening ? 'Stop voice transcription' : 'Dictate note with your voice'}
+                    >
+                      {isListening ? <MicOff size={13} /> : <Mic size={13} />}
+                      <span>{isListening ? 'Listening…' : 'Dictate'}</span>
+                    </button>
+                  )}
+                  <button type="button" onClick={() => setAdding(false)} className="p-1 text-slate-400 hover:text-slate-600" aria-label="Minimize new note"><X size={15} /></button>
+                </div>
+              </div>
+              <input
+                value={newTitle}
+                onChange={(event) => setNewTitle(event.target.value)}
+                placeholder="Title or question (optional)"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold outline-none focus:border-emerald-500"
+              />
               <RichTextEditor value={newContent} onChange={setNewContent} />
-              <div className="flex justify-end gap-2"><button type="button" onClick={() => setAdding(false)} className="rounded px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100">Cancel</button><button type="button" onClick={addBlock} className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white"><Plus size={14} /> Add card</button></div>
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[11px] text-slate-400">Auto-saved when switching pages</span>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setAdding(false)} className="rounded px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100">Cancel</button>
+                  <button type="button" onClick={addBlock} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 shadow-xs"><Plus size={14} /> Add card</button>
+                </div>
+              </div>
             </div>
           ) : (
-            <button type="button" onClick={() => { setNewTitle(defaultHeading); setAdding(true); }} className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 bg-white/70 py-4 text-sm font-medium text-emerald-700 hover:border-emerald-400 hover:bg-white"><Plus size={16} /> Add note card</button>
+            <button type="button" onClick={() => { setNewTitle(defaultHeading); setAdding(true); }} className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 bg-white/70 py-3.5 text-sm font-semibold text-emerald-700 hover:border-emerald-400 hover:bg-white transition-all"><Plus size={16} /> Add note card</button>
           )}
         </div>
       </div>

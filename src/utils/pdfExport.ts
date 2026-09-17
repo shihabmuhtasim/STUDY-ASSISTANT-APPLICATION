@@ -17,6 +17,23 @@ interface RenderLine {
   gapAfter: number;
 }
 
+interface RenderBlock {
+  isAi: boolean;
+  question?: string;
+  lines: RenderLine[];
+  height: number;
+}
+
+interface NotesPagePlan {
+  blocks: Array<{
+    block: RenderBlock;
+    y: number;
+    height: number;
+  }>;
+  totalContentHeight: number;
+  pageHeight: number;
+}
+
 function wrapCanvasText(context: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const lines: string[] = [];
   for (const paragraph of text.split('\n')) {
@@ -91,10 +108,13 @@ function drawAnnotationsOnCanvas(
   }
 }
 
-function richContentToStructuredText(value: string): string {
+/**
+ * Converts rich HTML and markdown note text into structured lines without raw formatting artifacts.
+ */
+export function richContentToStructuredText(value: string): string {
   if (!value) return '';
 
-  const withStructure = value
+  let text = value
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
     .replace(/<br\s*\/?>/gi, '\n')
@@ -102,203 +122,311 @@ function richContentToStructuredText(value: string): string {
     .replace(/<h2\b[^>]*>/gi, '\n## ')
     .replace(/<h3\b[^>]*>/gi, '\n### ')
     .replace(/<li\b[^>]*>/gi, '\n- ')
-    .replace(/<\/(?:h1|h2|h3|li|p|div|ul|ol)>/gi, '\n');
+    .replace(/<\/(?:h1|h2|h3|li|p|div|ul|ol)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"');
 
-  const parsed = new DOMParser().parseFromString(withStructure, 'text/html');
-  return (parsed.body.textContent || '')
+  // Strip math and markdown artifacts
+  text = text
+    .replace(/\\+\$/g, '')
+    .replace(/\$\$([\s\S]*?)\$\$/g, '$1')
+    .replace(/\(\$([^\$\n]+)\$\)/g, '($1)')
+    .replace(/\$([^\$\n]+)\$/g, '$1')
+    .replace(/\\ge\b/g, '≥')
+    .replace(/\\le\b/g, '≤')
+    .replace(/\\times\b/g, '×')
+    .replace(/\\cdot\b/g, '·')
+    .replace(/\\approx\b/g, '≈')
+    .replace(/\\neq\b/g, '≠')
+    .replace(/\\pm\b/g, '±')
+    .replace(/\\rightarrow\b/g, '→')
+    .replace(/\*\*\*([^*]+)\*\*\*/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/_{2,}([^_]+)_{2,}/g, '$1')
+    .replace(/_([^_]+)_/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[(.*?)\]\(.*?\)/g, '$1')
     .replace(/\u00a0/g, ' ')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n[ \t]+/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+
+  return text;
 }
 
-/**
-  Parse markdown string into structured text lines for jsPDF rendering
- */
+export function stripMarkdown(text: string): string {
+  return richContentToStructuredText(text);
+}
+
 export function parseMarkdownToCleanLines(text: string): CleanLine[] {
   if (!text) return [];
 
   const rawLines = richContentToStructuredText(text).split('\n');
   const cleanLines: CleanLine[] = [];
 
-  for (let line of rawLines) {
+  for (const line of rawLines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
     if (trimmed.startsWith('# ')) {
-      cleanLines.push({
-        text: stripMarkdown(trimmed.substring(2)),
-        type: 'h1',
-        raw: line,
-      });
+      cleanLines.push({ text: trimmed.substring(2).trim(), type: 'h1', raw: line });
     } else if (trimmed.startsWith('## ')) {
-      cleanLines.push({
-        text: stripMarkdown(trimmed.substring(3)),
-        type: 'h2',
-        raw: line,
-      });
+      cleanLines.push({ text: trimmed.substring(3).trim(), type: 'h2', raw: line });
     } else if (trimmed.startsWith('### ')) {
-      cleanLines.push({
-        text: stripMarkdown(trimmed.substring(4)),
-        type: 'h3',
-        raw: line,
-      });
+      cleanLines.push({ text: trimmed.substring(4).trim(), type: 'h3', raw: line });
     } else if (trimmed.startsWith('* ') || trimmed.startsWith('- ') || trimmed.startsWith('+ ')) {
-      cleanLines.push({
-        text: stripMarkdown(trimmed.substring(2)),
-        type: 'bullet',
-        raw: line,
-      });
+      cleanLines.push({ text: trimmed.substring(2).trim(), type: 'bullet', raw: line });
     } else if (/^\d+\.\s/.test(trimmed)) {
       const match = trimmed.match(/^\d+\.\s/);
       const prefix = match ? match[0] : '';
-      cleanLines.push({
-        text: `${prefix}${stripMarkdown(trimmed.substring(prefix.length))}`,
-        type: 'bullet',
-        raw: line,
-      });
+      cleanLines.push({ text: `${prefix}${trimmed.substring(prefix.length).trim()}`, type: 'bullet', raw: line });
     } else {
-      cleanLines.push({
-        text: stripMarkdown(trimmed),
-        type: 'normal',
-        raw: line,
-      });
+      cleanLines.push({ text: trimmed, type: 'normal', raw: line });
     }
   }
 
   return cleanLines;
 }
 
+function hasNoteContent(note?: PageNote): boolean {
+  if (!note) return false;
+  if (note.blocks && note.blocks.length > 0) {
+    return note.blocks.some((b) => Boolean(b.content?.trim() || b.question?.trim()));
+  }
+  return Boolean(note.content && richContentToStructuredText(note.content).trim().length > 0);
+}
+
+function addCustomPage(doc: jsPDF, widthMm: number, heightMm: number) {
+  const orientation = widthMm > heightMm ? 'l' : 'p';
+  doc.addPage([widthMm, heightMm], orientation);
+}
+
 /**
- * Strips markdown symbols like **, *, `, ### while preserving text
+ * Prepares measured lines and block heights for notes
  */
-export function stripMarkdown(text: string): string {
-  if (!text) return '';
-  return richContentToStructuredText(text)
-    .replace(/\*\*\*(.*?)\*\*\*/g, '$1')
-    .replace(/\*\*(.*?)\*\*/g, '$1')
-    .replace(/\*(.*?)\*/g, '$1')
-    .replace(/___(.*?)___/g, '$1')
-    .replace(/__(.*?)__/g, '$1')
-    .replace(/_(.*?)_/g, '$1')
-    .replace(/`(.*?)`/g, '$1')
-    .replace(/\[(.*?)\]\(.*?\)/g, '$1')
-    .replace(/^#+\s*/g, '')
-    .trim();
-}
+function prepareRenderBlocks(doc: jsPDF, blocks: NoteBlock[], contentWidth: number): RenderBlock[] {
+  const cardPadding = 9;
+  const renderBlocks: RenderBlock[] = [];
 
-function hasNoteContent(note?: PageNote) {
-  return Boolean(note && (note.content?.trim() || note.blocks?.length));
-}
-
-function renderWholeDocumentNotes(doc: jsPDF, note: PageNote, documentTitle: string) {
-  const margin = 15;
-  const pageWidth = doc.internal.pageSize.width;
-  const pageHeight = doc.internal.pageSize.height;
-  const contentWidth = pageWidth - margin * 2;
-  const notesTop = margin + 27;
-  const notesBottom = pageHeight - margin;
-  const cardPadding = 11;
-  const cardGap = 6;
-  let currentY = notesTop;
-  let pageCount = 0;
-
-  const finalizePage = () => {
-    const compactHeight = Math.min(pageHeight, Math.max(72, currentY - cardGap + 25.4));
-    doc.internal.pageSize.height = compactHeight;
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'italic');
-    doc.setTextColor(148, 163, 184);
-    doc.text(`Whole-document notes - ${documentTitle}`, pageWidth / 2, compactHeight - 6, { align: 'center' });
-  };
-
-  const startPage = (continued: boolean) => {
-    if (pageCount > 0) {
-      finalizePage();
-      doc.addPage('a4', 'portrait');
-    }
-    pageCount += 1;
-    doc.setFillColor(238, 242, 255);
-    doc.roundedRect(margin, margin, contentWidth, 20, 3, 3, 'F');
-    doc.setFillColor(79, 70, 229);
-    doc.rect(margin, margin, 4, 20, 'F');
-    doc.setFontSize(15);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(30, 41, 59);
-    doc.text(`Notes about the whole document${continued ? ' (continued)' : ''}`, margin + 8, margin + 9);
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100, 116, 139);
-    doc.text((doc.splitTextToSize(documentTitle, contentWidth - 16) as string[])[0] || documentTitle, margin + 8, margin + 15);
-    currentY = notesTop;
-  };
-
-  const blocks: NoteBlock[] = note.blocks?.length
-    ? note.blocks
-    : note.content?.trim()
-      ? [{ id: 'document-legacy', content: note.content, createdAt: Date.now(), isAiGenerated: false }]
-      : [];
-
-  startPage(false);
   for (const block of blocks) {
-    const parsedLines = parseMarkdownToCleanLines(block.content);
-    if (block.question) parsedLines.unshift({ text: `Q: ${stripMarkdown(block.question)}`, type: 'question', raw: block.question });
-    const lines: RenderLine[] = [];
-    for (const item of parsedLines) {
-      const heading = item.type === 'question' || item.type === 'h1' || item.type === 'h2' || item.type === 'h3';
-      const fontSize = item.type === 'h1' || item.type === 'h2' ? 12 : heading ? 11 : 10;
-      const indent = item.type === 'bullet' ? 6 : 0;
-      const text = item.type === 'bullet' ? `- ${item.text}` : item.text;
-      doc.setFontSize(fontSize);
-      doc.setFont('helvetica', heading ? 'bold' : 'normal');
-      const wrapped = doc.splitTextToSize(text, contentWidth - 12 - indent) as string[];
-      wrapped.forEach((line, index) => lines.push({ text: line, type: item.type, indent, fontSize, isBold: heading, height: fontSize * 0.45 + 2, gapAfter: index === wrapped.length - 1 ? 1.5 : 0 }));
+    const isAi = Boolean(block.isAiGenerated);
+    const parsedLines = parseMarkdownToCleanLines(block.content || '');
+
+    if (block.question?.trim()) {
+      parsedLines.unshift({
+        text: `Q: ${stripMarkdown(block.question)}`,
+        type: 'question',
+        raw: block.question,
+      });
     }
 
-    let lineIndex = 0;
-    while (lineIndex < lines.length) {
-      const available = notesBottom - currentY - cardPadding;
-      let chunkHeight = 0;
-      let chunkEnd = lineIndex;
-      while (chunkEnd < lines.length) {
-        const nextHeight = lines[chunkEnd].height + lines[chunkEnd].gapAfter;
-        if (chunkEnd > lineIndex && chunkHeight + nextHeight > available) break;
-        if (chunkEnd === lineIndex && nextHeight > available) break;
-        chunkHeight += nextHeight;
-        chunkEnd += 1;
-      }
-      if (chunkEnd === lineIndex) {
-        startPage(true);
-        continue;
+    if (parsedLines.length === 0) continue;
+
+    const lines: RenderLine[] = [];
+    let blockTextHeight = 0;
+
+    for (const item of parsedLines) {
+      let fontSize = 10;
+      let isBold = false;
+      let indent = 0;
+      let textToWrap = item.text;
+
+      if (item.type === 'question') {
+        fontSize = 11;
+        isBold = true;
+        indent = 0;
+      } else if (item.type === 'h1' || item.type === 'h2') {
+        fontSize = 12;
+        isBold = true;
+        indent = 0;
+      } else if (item.type === 'h3') {
+        fontSize = 10.5;
+        isBold = true;
+        indent = 0;
+      } else if (item.type === 'bullet') {
+        fontSize = 9.5;
+        isBold = false;
+        indent = 5;
+        textToWrap = `•  ${item.text}`;
+      } else {
+        fontSize = 9.5;
       }
 
-      const blockHeight = cardPadding + chunkHeight;
-      const isAi = Boolean(block.isAiGenerated);
-      doc.setFillColor(isAi ? 245 : 248, isAi ? 247 : 250, isAi ? 255 : 252);
-      doc.setDrawColor(isAi ? 224 : 226, isAi ? 231 : 232, isAi ? 255 : 240);
+      doc.setFontSize(fontSize);
+      doc.setFont('helvetica', isBold ? 'bold' : 'normal');
+
+      const maxW = contentWidth - 14 - indent;
+      const wrapped = doc.splitTextToSize(textToWrap, maxW) as string[];
+
+      wrapped.forEach((lineStr, index) => {
+        const lineHeight = fontSize * 0.42 + 2;
+        const gapAfter = index === wrapped.length - 1 ? (item.type === 'bullet' ? 1.5 : 2.5) : 0.8;
+        lines.push({
+          text: lineStr,
+          type: item.type,
+          indent,
+          fontSize,
+          isBold,
+          height: lineHeight,
+          gapAfter,
+        });
+        blockTextHeight += lineHeight + gapAfter;
+      });
+    }
+
+    const totalHeight = cardPadding * 2 + blockTextHeight;
+    renderBlocks.push({
+      isAi,
+      question: block.question,
+      lines,
+      height: totalHeight,
+    });
+  }
+
+  return renderBlocks;
+}
+
+/**
+ * Plans notes pages with dynamic heights (minimum 20% of A4 = ~60mm, maximum A4 = 297mm,
+ * cut after 1 inch = 25.4mm of the last text).
+ */
+function planNotesPages(blocks: RenderBlock[], startTop: number): NotesPagePlan[] {
+  const maxPageHeight = 297; // A4 height in mm
+  const minPageHeight = 60;  // 20% of A4 is ~59.4mm -> 60mm
+  const bottomBuffer = 25.4; // 1 inch buffer after the last text
+  const cardGap = 6;
+
+  const pages: NotesPagePlan[] = [];
+  let currentBlocks: Array<{ block: RenderBlock; y: number; height: number }> = [];
+  let currentY = startTop;
+
+  for (const block of blocks) {
+    // Check if this block fits on the current page before max A4 limit
+    if (currentBlocks.length > 0 && currentY + block.height + bottomBuffer > maxPageHeight) {
+      // Finalize current page
+      const neededHeight = currentY + bottomBuffer;
+      pages.push({
+        blocks: currentBlocks,
+        totalContentHeight: currentY,
+        pageHeight: Math.min(maxPageHeight, Math.max(minPageHeight, neededHeight)),
+      });
+      currentBlocks = [];
+      currentY = startTop;
+    }
+
+    currentBlocks.push({
+      block,
+      y: currentY,
+      height: block.height,
+    });
+    currentY += block.height + cardGap;
+  }
+
+  if (currentBlocks.length > 0) {
+    const neededHeight = currentY - cardGap + bottomBuffer;
+    pages.push({
+      blocks: currentBlocks,
+      totalContentHeight: currentY - cardGap,
+      pageHeight: Math.min(maxPageHeight, Math.max(minPageHeight, neededHeight)),
+    });
+  }
+
+  return pages;
+}
+
+/**
+ * Renders notes pages with dynamic page lengths based on content height.
+ */
+function renderDynamicNotes(
+  doc: jsPDF,
+  blocksToRender: NoteBlock[],
+  headerTitle: string,
+  documentTitle: string,
+  footerLabel: string
+) {
+  const margin = 14;
+  const pageWidth = 210; // A4 portrait width
+  const contentWidth = pageWidth - margin * 2;
+  const headerHeight = 16;
+  const notesTop = margin + headerHeight + 5;
+
+  const renderBlocks = prepareRenderBlocks(doc, blocksToRender, contentWidth);
+  if (renderBlocks.length === 0) return;
+
+  const plannedPages = planNotesPages(renderBlocks, notesTop);
+
+  plannedPages.forEach((pagePlan, pageIndex) => {
+    addCustomPage(doc, pageWidth, pagePlan.pageHeight);
+
+    // Header bar
+    doc.setFillColor(243, 244, 246); // slate-100
+    doc.roundedRect(margin, margin, contentWidth, headerHeight, 2.5, 2.5, 'F');
+    doc.setFillColor(79, 70, 229); // indigo-600
+    doc.rect(margin, margin, 3.5, headerHeight, 'F');
+
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 41, 59); // slate-800
+    const continuedText = pageIndex > 0 ? ' (continued)' : '';
+    doc.text(`${headerTitle}${continuedText}`, margin + 7, margin + 10.5);
+
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139); // slate-500
+    const truncatedDocTitle = (doc.splitTextToSize(documentTitle, 65) as string[])[0] || documentTitle;
+    doc.text(truncatedDocTitle, pageWidth - margin - 4, margin + 10.5, { align: 'right' });
+
+    // Render cards
+    for (const item of pagePlan.blocks) {
+      const { block, y } = item;
+      const isAi = block.isAi;
+
+      const bgColor: [number, number, number] = isAi ? [245, 247, 255] : [248, 250, 252];
+      const borderColor: [number, number, number] = isAi ? [224, 231, 255] : [226, 232, 240];
+      const accentColor: [number, number, number] = isAi ? [99, 102, 241] : [16, 185, 129];
+
+      doc.setFillColor(...bgColor);
+      doc.setDrawColor(...borderColor);
       doc.setLineWidth(0.3);
-      doc.roundedRect(margin, currentY, contentWidth, blockHeight, 2, 2, 'FD');
-      doc.setFillColor(isAi ? 99 : 16, isAi ? 102 : 185, isAi ? 241 : 129);
-      doc.rect(margin, currentY, 2.5, blockHeight, 'F');
-      let textY = currentY + 7;
-      for (const line of lines.slice(lineIndex, chunkEnd)) {
+      doc.roundedRect(margin, y, contentWidth, block.height, 2, 2, 'FD');
+
+      // Accent left bar
+      doc.setFillColor(...accentColor);
+      doc.rect(margin, y, 2.5, block.height, 'F');
+
+      let textY = y + 7;
+      for (const line of block.lines) {
         doc.setFontSize(line.fontSize);
         doc.setFont('helvetica', line.isBold ? 'bold' : 'normal');
-        doc.setTextColor(line.type === 'question' ? 67 : 51, line.type === 'question' ? 56 : 65, line.type === 'question' ? 202 : 85);
-        doc.text(line.text, margin + 6 + line.indent, textY);
+
+        if (line.type === 'question') doc.setTextColor(67, 56, 202); // indigo-700
+        else if (line.type === 'h1' || line.type === 'h2' || line.type === 'h3') doc.setTextColor(30, 41, 59);
+        else doc.setTextColor(51, 65, 85);
+
+        doc.text(line.text, margin + 7 + line.indent, textY);
         textY += line.height + line.gapAfter;
       }
-      currentY += blockHeight + cardGap;
-      lineIndex = chunkEnd;
-      if (lineIndex < lines.length) startPage(true);
     }
-  }
-  finalizePage();
+
+    // Dynamic Footer placed 4.5mm from bottom of dynamic page
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(148, 163, 184); // slate-400
+    doc.text(`${footerLabel} · ${documentTitle}`, pageWidth / 2, pagePlan.pageHeight - 4.5, { align: 'center' });
+  });
 }
 
 /**
- * Export PDF Study Pack with high-resolution page images and beautifully styled note boxes
+ * Export PDF Study Pack:
+ * - Slides preserve 100% of their native dimensions (no distortion or squishing).
+ * - Notes pages have dynamic heights (cut 1 inch after last text, min 20% A4, max 100% A4).
+ * - Fixes blank pages and missing notes bug.
  */
 export async function exportStudyPackPDF(
   documentTitle: string,
@@ -310,241 +438,95 @@ export async function exportStudyPackPDF(
   const pdfjsLib = await import('pdfjs-dist');
   pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
-  if (onProgress) onProgress("Loading document...");
+  if (onProgress) onProgress('Loading original document...');
   const source = fileData instanceof Blob
     ? { data: new Uint8Array(await fileData.arrayBuffer()) }
     : fileData;
   const loadingTask = pdfjsLib.getDocument(source);
   const pdf = await loadingTask.promise;
 
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const margin = 15;
-  const pageWidth = doc.internal.pageSize.width;
-  const pageHeight = doc.internal.pageSize.height;
-  const contentWidth = pageWidth - margin * 2;
-  const hasWholeDocumentNotes = hasNoteContent(notes[0]);
-  if (hasWholeDocumentNotes) {
+  // Initialize jsPDF
+  const doc = new jsPDF({ unit: 'mm', orientation: 'p' });
+
+  // 1. Whole Document Notes (if any)
+  const wholeDocNote = notes[0];
+  if (hasNoteContent(wholeDocNote)) {
     if (onProgress) onProgress('Formatting whole-document notes...');
-    renderWholeDocumentNotes(doc, notes[0], documentTitle);
+    const blocks: NoteBlock[] = wholeDocNote.blocks?.length
+      ? wholeDocNote.blocks
+      : wholeDocNote.content?.trim()
+        ? [{ id: 'doc-legacy', content: wholeDocNote.content, createdAt: Date.now(), isAiGenerated: false }]
+        : [];
+
+    renderDynamicNotes(
+      doc,
+      blocks,
+      'Whole-Document Study Notes',
+      documentTitle,
+      'Notes for full document'
+    );
   }
 
+  // 2. Export each slide + its corresponding notes
   for (let pageIdx = 1; pageIdx <= pdf.numPages; pageIdx++) {
-    if (onProgress) onProgress(`Rendering page ${pageIdx} of ${pdf.numPages}...`);
+    if (onProgress) onProgress(`Rendering slide ${pageIdx} of ${pdf.numPages}...`);
 
-    // 1. Render original PDF page
     const page = await pdf.getPage(pageIdx);
-    const viewport = page.getViewport({ scale: 1.5 });
+    // 72 points = 1 inch = 25.4 mm
+    const defaultViewport = page.getViewport({ scale: 1.0 });
+    const slideWidthMm = (defaultViewport.width * 25.4) / 72;
+    const slideHeightMm = (defaultViewport.height * 25.4) / 72;
+
+    // High quality canvas render (scale between 1.5 and 2.2)
+    const renderScale = Math.min(2.5, Math.max(1.5, 1800 / Math.max(defaultViewport.width, defaultViewport.height)));
+    const renderViewport = page.getViewport({ scale: renderScale });
     const canvas = window.document.createElement('canvas');
     const context = canvas.getContext('2d');
-    canvas.height = viewport.height;
-    canvas.width = viewport.width;
+    canvas.width = renderViewport.width;
+    canvas.height = renderViewport.height;
 
     if (context) {
-      await page.render({ canvasContext: context, viewport } as any).promise;
+      await page.render({ canvasContext: context, viewport: renderViewport } as any).promise;
       drawAnnotationsOnCanvas(context, canvas.width, canvas.height, annotations[pageIdx] || []);
-      const imgData = canvas.toDataURL('image/jpeg', 0.85);
+      const imgData = canvas.toDataURL('image/jpeg', 0.90);
 
-      if (pageIdx > 1 || hasWholeDocumentNotes) doc.addPage('a4', 'portrait');
+      // Add slide page with EXACT native dimensions
+      addCustomPage(doc, slideWidthMm, slideHeightMm);
+      doc.addImage(imgData, 'JPEG', 0, 0, slideWidthMm, slideHeightMm);
 
-      const imgProps = doc.getImageProperties(imgData);
-      const pdfRatio = imgProps.width / imgProps.height;
-      let renderWidth = contentWidth;
-      let renderHeight = contentWidth / pdfRatio;
-
-      if (renderHeight > pageHeight - margin * 2) {
-        renderHeight = pageHeight - margin * 2;
-        renderWidth = renderHeight * pdfRatio;
-      }
-
-      const xOffset = (pageWidth - renderWidth) / 2;
-      const yOffset = margin;
-
-      doc.addImage(imgData, 'JPEG', xOffset, yOffset, renderWidth, renderHeight);
-      
-      // Footer page number label on PDF slide page
-      doc.setFontSize(9);
+      // Slide footer label
+      doc.setFontSize(8);
       doc.setFont('helvetica', 'italic');
-      doc.setTextColor(148, 163, 184); // slate-400
-      doc.text(`Page ${pageIdx} of ${pdf.numPages} - ${documentTitle}`, pageWidth / 2, pageHeight - 6, { align: 'center' });
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Page ${pageIdx} of ${pdf.numPages} · ${documentTitle}`, slideWidthMm / 2, slideHeightMm - 3.5, { align: 'center' });
+    }
 
-      // 2. Render Formatted Notes Page if notes exist for this page
-      const pageNote = notes[pageIdx];
-      const hasContent = pageNote && (pageNote.content?.trim() || (pageNote.blocks && pageNote.blocks.length > 0));
+    // 3. Render Notes for this page (if any exist)
+    const pageNote = notes[pageIdx];
+    if (hasNoteContent(pageNote)) {
+      if (onProgress) onProgress(`Formatting notes for page ${pageIdx}...`);
+      const blocks: NoteBlock[] = pageNote.blocks?.length
+        ? pageNote.blocks
+        : pageNote.content?.trim()
+          ? [{ id: `page-${pageIdx}-legacy`, content: pageNote.content, createdAt: Date.now(), isAiGenerated: false }]
+          : [];
 
-      if (hasContent) {
-        const notesTop = margin + 20;
-        const notesBottom = pageHeight - margin;
-        const cardPadding = 11;
-        const cardGap = 6;
-        let currentY = notesTop;
-        let notesPageCount = 0;
-
-        const finalizeNotesPage = () => {
-          const compactHeight = Math.min(pageHeight, Math.max(66, currentY - cardGap + 25.4));
-          doc.internal.pageSize.height = compactHeight;
-          doc.setFontSize(9);
-          doc.setFont('helvetica', 'italic');
-          doc.setTextColor(148, 163, 184);
-          doc.text(`Notes for Page ${pageIdx} - ${documentTitle}`, pageWidth / 2, compactHeight - 6, { align: 'center' });
-        };
-
-        const startNotesPage = (continued: boolean) => {
-          if (notesPageCount > 0) finalizeNotesPage();
-          doc.addPage('a4', 'portrait');
-          notesPageCount += 1;
-
-          doc.setFillColor(243, 244, 246);
-          doc.roundedRect(margin, margin, contentWidth, 14, 3, 3, 'F');
-          doc.setFillColor(79, 70, 229);
-          doc.rect(margin, margin, 4, 14, 'F');
-
-          doc.setFontSize(13);
-          doc.setFont('helvetica', 'bold');
-          doc.setTextColor(30, 41, 59);
-          doc.text(`Study Notes - Page ${pageIdx}${continued ? ' (continued)' : ''}`, margin + 8, margin + 9.5);
-
-          doc.setFontSize(9);
-          doc.setFont('helvetica', 'normal');
-          doc.setTextColor(100, 116, 139);
-          const titleLine = (doc.splitTextToSize(documentTitle, 62) as string[])[0] || documentTitle;
-          doc.text(titleLine, pageWidth - margin - 5, margin + 9.5, { align: 'right' });
-          currentY = notesTop;
-        };
-
-        startNotesPage(false);
-
-        // Build list of blocks to render
-        let blocksToRender: NoteBlock[] = [];
-        if (pageNote.blocks && pageNote.blocks.length > 0) {
-          blocksToRender = pageNote.blocks;
-        } else if (pageNote.content?.trim()) {
-          blocksToRender = [{
-            id: 'legacy-1',
-            content: pageNote.content,
-            createdAt: Date.now(),
-            isAiGenerated: false
-          }];
-        }
-
-        for (const block of blocksToRender) {
-          const isAi = Boolean(block.isAiGenerated);
-
-          const parsedLines = parseMarkdownToCleanLines(block.content);
-          if (block.question) {
-            parsedLines.unshift({
-              text: `Q: ${stripMarkdown(block.question)}`,
-              type: 'question',
-              raw: block.question
-            });
-          }
-
-          const linesToDraw: RenderLine[] = [];
-
-          for (const item of parsedLines) {
-            let fontSize = 10;
-            let isBold = false;
-            let indent = 0;
-            let textToWrap = item.text;
-
-            if (item.type === 'question') {
-              fontSize = 11;
-              isBold = true;
-              indent = 0;
-            } else if (item.type === 'h1' || item.type === 'h2') {
-              fontSize = 12;
-              isBold = true;
-              indent = 0;
-            } else if (item.type === 'h3') {
-              fontSize = 11;
-              isBold = true;
-              indent = 0;
-            } else if (item.type === 'bullet') {
-              fontSize = 10;
-              isBold = false;
-              indent = 6;
-              textToWrap = `- ${item.text}`;
-            }
-
-            doc.setFontSize(fontSize);
-            doc.setFont('helvetica', isBold ? 'bold' : 'normal');
-
-            const maxW = contentWidth - 12 - indent;
-            const wrapped = doc.splitTextToSize(textToWrap, maxW);
-
-            wrapped.forEach((lineStr: string, index: number) => {
-              linesToDraw.push({
-                text: lineStr,
-                type: item.type,
-                indent,
-                fontSize,
-                isBold,
-                height: (fontSize * 0.45) + 2,
-                gapAfter: index === wrapped.length - 1 ? 1.5 : 0,
-              });
-            });
-          }
-
-          if (linesToDraw.length === 0) continue;
-          const cardBgColor = isAi ? [245, 247, 255] : [248, 250, 252]; // soft indigo vs soft slate
-          const cardBorderColor = isAi ? [224, 231, 255] : [226, 232, 240];
-          const accentColor = isAi ? [99, 102, 241] : [16, 185, 129]; // indigo vs emerald
-          const totalBlockHeight = cardPadding + linesToDraw.reduce((height, line) => height + line.height + line.gapAfter, 0);
-          const freshPageCapacity = notesBottom - notesTop;
-
-          if (totalBlockHeight <= freshPageCapacity && currentY + totalBlockHeight > notesBottom) {
-            startNotesPage(true);
-          }
-
-          let lineIndex = 0;
-          while (lineIndex < linesToDraw.length) {
-            const availableLineHeight = notesBottom - currentY - cardPadding;
-            let chunkHeight = 0;
-            let chunkEnd = lineIndex;
-
-            while (chunkEnd < linesToDraw.length) {
-              const nextLine = linesToDraw[chunkEnd];
-              const nextHeight = nextLine.height + nextLine.gapAfter;
-              if (chunkEnd > lineIndex && chunkHeight + nextHeight > availableLineHeight) break;
-              if (chunkEnd === lineIndex && nextHeight > availableLineHeight) break;
-              chunkHeight += nextHeight;
-              chunkEnd += 1;
-            }
-
-            if (chunkEnd === lineIndex) {
-              startNotesPage(true);
-              continue;
-            }
-
-            const blockHeight = cardPadding + chunkHeight;
-            const boxY = currentY;
-            doc.setFillColor(cardBgColor[0], cardBgColor[1], cardBgColor[2]);
-            doc.setDrawColor(cardBorderColor[0], cardBorderColor[1], cardBorderColor[2]);
-            doc.setLineWidth(0.3);
-            doc.roundedRect(margin, boxY, contentWidth, blockHeight, 2, 2, 'FD');
-            doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
-            doc.rect(margin, boxY, 2.5, blockHeight, 'F');
-
-            let textY = boxY + 7;
-            for (const line of linesToDraw.slice(lineIndex, chunkEnd)) {
-              doc.setFontSize(line.fontSize);
-              doc.setFont('helvetica', line.isBold ? 'bold' : 'normal');
-              if (line.type === 'question') doc.setTextColor(67, 56, 202);
-              else if (line.type === 'h1' || line.type === 'h2' || line.type === 'h3') doc.setTextColor(30, 41, 59);
-              else doc.setTextColor(51, 65, 85);
-              doc.text(line.text, margin + 6 + line.indent, textY);
-              textY += line.height + line.gapAfter;
-            }
-
-            currentY += blockHeight + cardGap;
-            lineIndex = chunkEnd;
-            if (lineIndex < linesToDraw.length) startNotesPage(true);
-          }
-        }
-
-        finalizeNotesPage();
-      }
+      renderDynamicNotes(
+        doc,
+        blocks,
+        `Study Notes — Page ${pageIdx}`,
+        documentTitle,
+        `Notes for Page ${pageIdx}`
+      );
     }
   }
 
-  doc.save(`${documentTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}_Study_Pack.pdf`);
+  // Remove the initial blank page created by jsPDF constructor
+  if (doc.getNumberOfPages() > 1) {
+    doc.deletePage(1);
+  }
+
+  if (onProgress) onProgress('Saving Study Pack PDF...');
+  const safeFileName = documentTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
+  doc.save(`${safeFileName}_Study_Pack.pdf`);
 }

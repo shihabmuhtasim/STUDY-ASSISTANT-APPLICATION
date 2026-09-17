@@ -1,0 +1,246 @@
+import fs from 'fs';
+import path from 'path';
+import sharp from 'sharp';
+
+const downloadsDir = '/Users/shihab/Downloads';
+const publicDir = path.resolve(process.cwd(), 'public');
+
+// Ensure directories exist
+if (!fs.existsSync(downloadsDir)) fs.mkdirSync(downloadsDir, { recursive: true });
+if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+
+// 1. Icon Mark SVG (512x512)
+const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1E1B4B"/>
+      <stop offset="50%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="brandGrad" x1="60" y1="60" x2="452" y2="452" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#818CF8"/>
+      <stop offset="50%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#4338CA"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="150" y1="100" x2="380" y2="380" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#818CF8"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#4338CA" flood-opacity="0.35"/>
+    </filter>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Background Card -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  
+  <!-- Subtle Inner Border -->
+  <rect x="2" y="2" width="508" height="508" rx="110" stroke="url(#brandGrad)" stroke-opacity="0.3" stroke-width="4" fill="none"/>
+
+  <!-- Main Emblem Container -->
+  <g filter="url(#shadow)">
+    <!-- Book/Document Left Page -->
+    <path d="M 120 160 C 120 160, 180 144, 256 168 L 256 368 C 180 344, 120 360, 120 360 Z" fill="url(#brandGrad)" opacity="0.9"/>
+    
+    <!-- Book/Document Right Page -->
+    <path d="M 392 160 C 392 160, 332 144, 256 168 L 256 368 C 332 344, 392 360, 392 360 Z" fill="url(#brandGrad)"/>
+    
+    <!-- Spine Line -->
+    <line x1="256" y1="168" x2="256" y2="368" stroke="#EEF2FF" stroke-width="6" stroke-linecap="round"/>
+
+    <!-- Document Lines (Left Page) -->
+    <line x1="160" y1="210" x2="220" y2="200" stroke="#E0E7FF" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+    <line x1="150" y1="250" x2="220" y2="240" stroke="#E0E7FF" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+    <line x1="150" y1="290" x2="210" y2="280" stroke="#E0E7FF" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+
+    <!-- Checkmark on Right Page -->
+    <path d="M 290 250 L 320 280 L 370 210" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  </g>
+
+  <!-- AI Sparkle 4-point Star Top Right -->
+  <g transform="translate(365, 115) scale(1.3)" filter="url(#glow)">
+    <path d="M 20 0 C 20 10, 25 15, 40 20 C 25 25, 20 30, 20 40 C 20 30, 15 25, 0 20 C 15 15, 20 10, 20 0 Z" fill="url(#accentGrad)"/>
+  </g>
+
+  <!-- Secondary Small Sparkle -->
+  <g transform="translate(115, 110) scale(0.75)">
+    <path d="M 20 0 C 20 10, 25 15, 40 20 C 25 25, 20 30, 20 40 C 20 30, 15 25, 0 20 C 15 15, 20 10, 20 0 Z" fill="#A5B4FC" opacity="0.9"/>
+  </g>
+</svg>`;
+
+// 2. Full Horizontal Logo (Light Theme - 1200x360)
+const logoLightSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="240" y2="240" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1E1B4B"/>
+      <stop offset="50%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="brandGrad" x1="30" y1="30" x2="210" y2="210" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#818CF8"/>
+      <stop offset="50%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#4338CA"/>
+    </linearGradient>
+    <linearGradient id="aiGrad" x1="0" y1="0" x2="120" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#4F46E5"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#818CF8"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#4338CA" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Left Icon Emblem (240x240 inside 60,60 offset) -->
+  <g transform="translate(60, 60)">
+    <rect width="240" height="240" rx="52" fill="url(#bgGrad)"/>
+    <rect x="1" y="1" width="238" height="238" rx="51" stroke="url(#brandGrad)" stroke-opacity="0.3" stroke-width="2" fill="none"/>
+    
+    <g filter="url(#shadow)">
+      <path d="M 56 75 C 56 75, 84 67, 120 78 L 120 172 C 84 161, 56 168, 56 168 Z" fill="url(#brandGrad)" opacity="0.9"/>
+      <path d="M 184 75 C 184 75, 156 67, 120 78 L 120 172 C 156 161, 184 168, 184 168 Z" fill="url(#brandGrad)"/>
+      <line x1="120" y1="78" x2="120" y2="172" stroke="#EEF2FF" stroke-width="3" stroke-linecap="round"/>
+      <line x1="75" y1="98" x2="103" y2="93" stroke="#E0E7FF" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+      <line x1="70" y1="117" x2="103" y2="112" stroke="#E0E7FF" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+      <line x1="70" y1="136" x2="98" y2="131" stroke="#E0E7FF" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+      <path d="M 136 117 L 150 131 L 173 98" stroke="#FFFFFF" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </g>
+
+    <g transform="translate(170, 50) scale(0.65)">
+      <path d="M 20 0 C 20 10, 25 15, 40 20 C 25 25, 20 30, 20 40 C 20 30, 15 25, 0 20 C 15 15, 20 10, 20 0 Z" fill="url(#accentGrad)"/>
+    </g>
+  </g>
+
+  <!-- Brand Typography -->
+  <g transform="translate(340, 80)">
+    <!-- "NoteMyDoc" Text -->
+    <text x="0" y="105" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-weight="800" font-size="92" fill="#0F172A" letter-spacing="-2.5">NoteMyDoc</text>
+
+    <!-- "AI" Badge -->
+    <g transform="translate(565, 22)">
+      <rect width="135" height="85" rx="22" fill="url(#aiGrad)"/>
+      <text x="67.5" y="60" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-weight="900" font-size="52" fill="#FFFFFF" text-anchor="middle" letter-spacing="1">AI</text>
+    </g>
+
+    <!-- Subtitle Tagline -->
+    <text x="4" y="165" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-weight="500" font-size="32" fill="#64748B" letter-spacing="-0.5">Chat with every page. Keep every note.</text>
+  </g>
+</svg>`;
+
+// 3. Full Horizontal Logo (Dark Theme - 1200x360)
+const logoDarkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="240" y2="240" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1E1B4B"/>
+      <stop offset="50%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="brandGrad" x1="30" y1="30" x2="210" y2="210" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#818CF8"/>
+      <stop offset="50%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#4338CA"/>
+    </linearGradient>
+    <linearGradient id="aiGrad" x1="0" y1="0" x2="120" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#4F46E5"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#818CF8"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#4338CA" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- Left Icon Emblem -->
+  <g transform="translate(60, 60)">
+    <rect width="240" height="240" rx="52" fill="url(#bgGrad)"/>
+    <rect x="1" y="1" width="238" height="238" rx="51" stroke="url(#brandGrad)" stroke-opacity="0.4" stroke-width="2" fill="none"/>
+    
+    <g filter="url(#shadow)">
+      <path d="M 56 75 C 56 75, 84 67, 120 78 L 120 172 C 84 161, 56 168, 56 168 Z" fill="url(#brandGrad)" opacity="0.9"/>
+      <path d="M 184 75 C 184 75, 156 67, 120 78 L 120 172 C 156 161, 184 168, 184 168 Z" fill="url(#brandGrad)"/>
+      <line x1="120" y1="78" x2="120" y2="172" stroke="#EEF2FF" stroke-width="3" stroke-linecap="round"/>
+      <line x1="75" y1="98" x2="103" y2="93" stroke="#E0E7FF" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+      <line x1="70" y1="117" x2="103" y2="112" stroke="#E0E7FF" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+      <line x1="70" y1="136" x2="98" y2="131" stroke="#E0E7FF" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+      <path d="M 136 117 L 150 131 L 173 98" stroke="#FFFFFF" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </g>
+
+    <g transform="translate(170, 50) scale(0.65)">
+      <path d="M 20 0 C 20 10, 25 15, 40 20 C 25 25, 20 30, 20 40 C 20 30, 15 25, 0 20 C 15 15, 20 10, 20 0 Z" fill="url(#accentGrad)"/>
+    </g>
+  </g>
+
+  <!-- Brand Typography (Dark Theme Colors) -->
+  <g transform="translate(340, 80)">
+    <text x="0" y="105" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-weight="800" font-size="92" fill="#F8FAFC" letter-spacing="-2.5">NoteMyDoc</text>
+
+    <g transform="translate(565, 22)">
+      <rect width="135" height="85" rx="22" fill="url(#aiGrad)"/>
+      <text x="67.5" y="60" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-weight="900" font-size="52" fill="#FFFFFF" text-anchor="middle" letter-spacing="1">AI</text>
+    </g>
+
+    <text x="4" y="165" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-weight="500" font-size="32" fill="#94A3B8" letter-spacing="-0.5">Chat with every page. Keep every note.</text>
+  </g>
+</svg>`;
+
+async function run() {
+  console.log('Generating SVG & high-res PNG logo files...');
+
+  // Save SVG files to Downloads and public/
+  fs.writeFileSync(path.join(downloadsDir, 'notemydoc-ai-icon.svg'), iconSvg);
+  fs.writeFileSync(path.join(publicDir, 'notemydoc-ai-icon.svg'), iconSvg);
+
+  fs.writeFileSync(path.join(downloadsDir, 'notemydoc-ai-logo.svg'), logoLightSvg);
+  fs.writeFileSync(path.join(publicDir, 'notemydoc-ai-logo.svg'), logoLightSvg);
+
+  fs.writeFileSync(path.join(downloadsDir, 'notemydoc-ai-logo-dark.svg'), logoDarkSvg);
+  fs.writeFileSync(path.join(publicDir, 'notemydoc-ai-logo-dark.svg'), logoDarkSvg);
+
+  // Convert SVGs to PNGs using sharp
+  // 1. Icon PNG (1024x1024 high-res)
+  await sharp(Buffer.from(iconSvg))
+    .resize(1024, 1024)
+    .png()
+    .toFile(path.join(downloadsDir, 'notemydoc-ai-icon.png'));
+
+  await sharp(Buffer.from(iconSvg))
+    .resize(1024, 1024)
+    .png()
+    .toFile(path.join(publicDir, 'notemydoc-ai-icon.png'));
+
+  // 2. Logo Light PNG (2400x720 high-res)
+  await sharp(Buffer.from(logoLightSvg))
+    .resize(2400, 720)
+    .png()
+    .toFile(path.join(downloadsDir, 'notemydoc-ai-logo.png'));
+
+  await sharp(Buffer.from(logoLightSvg))
+    .resize(2400, 720)
+    .png()
+    .toFile(path.join(publicDir, 'notemydoc-ai-logo.png'));
+
+  // 3. Logo Dark PNG (2400x720 high-res)
+  await sharp(Buffer.from(logoDarkSvg))
+    .resize(2400, 720)
+    .png()
+    .toFile(path.join(downloadsDir, 'notemydoc-ai-logo-dark.png'));
+
+  await sharp(Buffer.from(logoDarkSvg))
+    .resize(2400, 720)
+    .png()
+    .toFile(path.join(publicDir, 'notemydoc-ai-logo-dark.png'));
+
+  console.log('Successfully created logo files in Downloads and public directories!');
+}
+
+run().catch(console.error);

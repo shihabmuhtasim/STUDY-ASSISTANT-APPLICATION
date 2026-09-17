@@ -18,11 +18,13 @@ export async function askAIAboutPage(input: {
   history: AIInteraction[];
   modelPreference: AIModelPreference;
   allowFallback: boolean;
+  signal?: AbortSignal;
 }): Promise<{ response: string; remaining?: number; remainingPercent?: number; usageCharged?: number; provider?: AIInteraction['provider']; model?: string; requestedModel?: AIModelPreference; fallbackUsed?: boolean }> {
   const user = firebaseAuth.currentUser;
   if (!user) throw new AIRequestError('Sign in again to use the AI assistant.', 'AUTH_REQUIRED', 401);
   const response = await fetch('/api/ai/chat', {
     method: 'POST',
+    signal: input.signal,
     headers: {
       'content-type': 'application/json',
       authorization: `Bearer ${await user.getIdToken()}`,

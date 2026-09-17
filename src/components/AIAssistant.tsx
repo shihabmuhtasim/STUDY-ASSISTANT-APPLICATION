@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bot, Check, ChevronDown, Copy, Crown, HelpCircle, Image as ImageIcon, KeyRound, ListFilter, Loader2, Lock, Mic, Plus, Quote, Radio, Send, Sparkles, Square } from 'lucide-react';
+import { Bot, Check, ChevronDown, Copy, Crown, HelpCircle, Image as ImageIcon, KeyRound, ListFilter, Loader2, Lock, Mic, MicOff, Plus, Quote, Radio, Send, Sparkles, Square } from 'lucide-react';
 import { AccountIdentity, AccountSummary, AIInteraction, AIModelPreference, AISourceReference, CustomAIConnection } from '../types';
 import { AIRequestError, askAIAboutPage } from '../services/ai';
 import { askCustomAI } from '../services/customAI';
@@ -11,6 +11,7 @@ import { loadCloudPreferences, saveCloudPreferences } from '../services/cloudDat
 import { deleteEncryptedConnection, loadSavedConnections, saveEncryptedConnection } from '../services/connectionStore';
 import { buildQuestionContextBundle } from '../utils/documentContext';
 import { referencesUsedInAnswer } from '../utils/answerReferences';
+import { useSpeechTranscription } from '../hooks/useSpeechTranscription';
 
 interface AIAssistantProps {
   pageNumber: number;
@@ -80,10 +81,20 @@ function displayModel(model: string) {
 
 function normalizeModelResponse(value: string) {
   return value
-    .replace(/\\\$/g, '$')
+    .replace(/\\+\$/g, '$')
     .replace(/\$\$([\s\S]*?)\$\$/g, '$1')
-    .replace(/\$([A-Za-z][A-Za-z0-9_{}^\\]*(?:\s*[=+\-*/]\s*[A-Za-z0-9_.{}^\\]+)?)\$/g, '$1')
-    .replace(/\*\*\*(.+?)\*\*\*/g, '**$1**')
+    .replace(/\(\$([^\$\n]+)\$\)/g, '($1)')
+    .replace(/\$([^\$\n]+)\$/g, '$1')
+    .replace(/\\ge\b/g, '≥')
+    .replace(/\\le\b/g, '≤')
+    .replace(/\\times\b/g, '×')
+    .replace(/\\cdot\b/g, '·')
+    .replace(/\\approx\b/g, '≈')
+    .replace(/\\neq\b/g, '≠')
+    .replace(/\\pm\b/g, '±')
+    .replace(/\\rightarrow\b/g, '→')
+    .replace(/\\leftarrow\b/g, '←')
+    .replace(/\*\*\*([^*]+)\*\*\*/g, '**$1**')
     .replace(/^\s*\*{3,}\s*$/gm, '')
     .replace(/\\([*_`])/g, '$1')
     .replace(/\n{3,}/g, '\n\n')
@@ -136,6 +147,27 @@ export function AIAssistant({
   const hasProAccess = Boolean(account && 'plan' in account && account.plan === 'pro');
   const remainingPercent = account && 'aiRemainingPercent' in account ? account.aiRemainingPercent : 0;
   const maxPage = Math.max(1, documentPages.length);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const {
+    isSupported: isSpeechSupported,
+    isListening,
+    toggleListening,
+    stopListening,
+  } = useSpeechTranscription({
+    onTranscript: (spokenText) => {
+      if (spokenText.trim()) setPrompt(spokenText);
+    },
+  });
+
+  const handleCancel = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+    setPendingPrompt(null);
+  };
 
   useEffect(() => {
     if (manualRangeEnabled) return;
@@ -257,6 +289,8 @@ export function AIAssistant({
       return;
     }
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     setIsLoading(true);
     setPendingPrompt(text.trim());
     setError(null);
@@ -280,18 +314,20 @@ export function AIAssistant({
         history,
         scope,
         referencesEnabled,
+        signal: controller.signal,
       };
       let result;
       if (modelPreference === 'custom' && activeConnection) {
         try {
-          result = { ...(await askCustomAI({ ...request, connection: activeConnection })), requestedModel: 'custom' as const, fallbackUsed: false };
+          result = { ...(await askCustomAI({ ...request, connection: activeConnection, signal: controller.signal })), requestedModel: 'custom' as const, fallbackUsed: false };
         } catch (customError) {
+          if (controller.signal.aborted) return;
           if (!allowFallback) throw customError;
-          const fallback = await askAIAboutPage({ ...request, modelPreference: 'auto', allowFallback: true });
+          const fallback = await askAIAboutPage({ ...request, modelPreference: 'auto', allowFallback: true, signal: controller.signal });
           result = { ...fallback, requestedModel: 'custom' as const, fallbackUsed: true };
         }
       } else {
-        result = await askAIAboutPage({ ...request, modelPreference, allowFallback });
+        result = await askAIAboutPage({ ...request, modelPreference, allowFallback, signal: controller.signal });
       }
       if (typeof result.remaining === 'number') onRemainingChange(result.remaining, result.remainingPercent);
       const cleanedResponse = normalizeModelResponse(result.response);
@@ -309,12 +345,14 @@ export function AIAssistant({
         references: usedReferences.length > 0 ? usedReferences : undefined,
       });
     } catch (requestError) {
+      if (controller.signal.aborted) return;
       if (requestError instanceof AIRequestError) {
         if (typeof requestError.remaining === 'number') onRemainingChange(requestError.remaining, requestError.remainingPercent);
         setError(requestError.message);
       }
       else setError('The AI assistant could not answer right now. Try again.');
     } finally {
+      abortControllerRef.current = null;
       setPendingPrompt(null);
       setIsLoading(false);
     }
@@ -433,9 +471,21 @@ export function AIAssistant({
         {pendingPrompt && (
           <div className="space-y-3" aria-live="polite">
             <div className="flex justify-end"><div className="bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-medium max-w-[85%]">{pendingPrompt}</div></div>
-            <div className="flex items-center gap-2 bg-indigo-50/70 border border-indigo-100 rounded-lg px-4 py-3 text-sm text-indigo-800">
-              <Loader2 size={16} className="animate-spin text-indigo-600" />
-              <span>{scope === 'document' ? 'Finding the best passages and preparing an answer…' : `Thinking about page ${pageNumber} and the document…`}</span>
+            <div className="flex items-center justify-between gap-2 bg-indigo-50/70 border border-indigo-100 rounded-lg px-4 py-3 text-sm text-indigo-800">
+              <div className="flex items-center gap-2 min-w-0">
+                <Loader2 size={16} className="animate-spin text-indigo-600 shrink-0" />
+                <span className="truncate">{scope === 'document' ? 'Finding the best passages and preparing an answer…' : `Thinking about page ${pageNumber} and the document…`}</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-red-700 bg-white hover:bg-red-50 px-2 py-1 rounded border border-red-200 transition-colors shrink-0 shadow-2xs cursor-pointer"
+                title="Stop generating response"
+                aria-label="Cancel AI response"
+              >
+                <Square size={11} className="fill-current" />
+                <span>Stop</span>
+              </button>
             </div>
           </div>
         )}
@@ -469,9 +519,44 @@ export function AIAssistant({
             placeholder={isDocumentContextLoading ? 'Preparing document context…' : scope === 'document' ? 'Ask anything about the whole document…' : 'Ask about this page or the whole document…'}
             disabled={isLoading || isDocumentContextLoading}
             maxLength={4000}
-            className="w-full pl-4 pr-11 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs sm:text-sm focus:border-indigo-500 disabled:opacity-60"
+            className={`w-full pl-4 ${isSpeechSupported ? 'pr-20' : 'pr-11'} py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs sm:text-sm focus:border-indigo-500 disabled:opacity-60`}
           />
-          <button type="submit" disabled={!prompt.trim() || isLoading || isDocumentContextLoading} className="absolute right-2 p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30" aria-label="Send question"><Send size={18} /></button>
+          {isSpeechSupported && (
+            <button
+              type="button"
+              onClick={toggleListening}
+              disabled={isLoading || isDocumentContextLoading}
+              className={`absolute right-10 p-1.5 rounded-lg transition-colors disabled:opacity-30 cursor-pointer ${
+                isListening
+                  ? 'text-red-600 bg-red-50 border border-red-200 animate-pulse'
+                  : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'
+              }`}
+              title={isListening ? 'Stop voice transcription' : 'Dictate question with your voice'}
+              aria-label={isListening ? 'Stop listening' : 'Voice dictation'}
+            >
+              {isListening ? <MicOff size={16} /> : <Mic size={16} />}
+            </button>
+          )}
+          {isLoading ? (
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="absolute right-2 p-1.5 text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-all shadow-xs cursor-pointer flex items-center justify-center"
+              title="Stop AI response"
+              aria-label="Cancel AI response"
+            >
+              <Square size={16} className="fill-current" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!prompt.trim() || isDocumentContextLoading}
+              className="absolute right-2 p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-30 cursor-pointer"
+              aria-label="Send question"
+            >
+              <Send size={18} />
+            </button>
+          )}
         </form>
       </div>
 

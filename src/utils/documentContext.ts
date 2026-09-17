@@ -3,8 +3,9 @@ import type { AISourceReference } from '../types';
 const STOP_WORDS = new Set(['about', 'after', 'also', 'and', 'are', 'been', 'before', 'can', 'does', 'for', 'from', 'have', 'into', 'more', 'that', 'the', 'their', 'this', 'what', 'when', 'where', 'which', 'whole', 'with', 'would', 'your']);
 const BROAD_QUESTION = /summari[sz]e|overview|study guide|main (?:topics|ideas|points)|key (?:topics|ideas|points)|entire document|whole document|all pages/i;
 
-function words(value: string) {
-  return (value.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter((word) => word.length > 2 && !STOP_WORDS.has(word));
+function words(value: string): string[] {
+  const matches = value.toLowerCase().match(/[\p{L}\p{N}]+/gu);
+  return matches ? matches.filter((word) => word.length > 2 && !STOP_WORDS.has(word)) : [];
 }
 
 function evenlySpacedPages(total: number, count: number) {

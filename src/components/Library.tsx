@@ -120,34 +120,166 @@ export function Library({ documents, folders, onOpenDocument, onAddDocument, onD
               <div className="flex items-center gap-2 text-xs font-semibold text-indigo-700"><Sparkles size={15} />THE AI STUDY WORKSPACE FOR DOCUMENTS</div>
               <h1 className="mt-5 max-w-3xl text-4xl font-semibold leading-[1.08] text-[#171717] sm:text-6xl">Study documents page by page. Understand them as a whole.</h1>
               <p className="mt-5 max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">NoteMyDoc AI keeps every question, explanation, and note connected to the exact page you are reading, while the AI retains the wider document context.</p>
-              <p className="mt-6 text-sm font-semibold text-[#171717]">Chat with every page. Keep every note.</p>
+
+              {/* Custom API & Model Freedom Highlight */}
+              <div className="mt-7 rounded-xl border border-indigo-200/80 bg-gradient-to-r from-indigo-50/90 via-white to-violet-50/90 p-4 shadow-xs">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-600 font-bold text-white text-xs shadow-xs">∞</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-indigo-900">Custom API Freedom · Use Without Limits</span>
+                </div>
+                <p className="mt-1.5 text-xs sm:text-sm text-slate-700 leading-relaxed">
+                  Study using our fast built-in models or <span className="font-semibold text-slate-900">connect your own API key</span> (OpenAI, Google Gemini, Anthropic Claude, Groq, DeepSeek, or NVIDIA) to study <span className="font-semibold text-indigo-700 underline decoration-indigo-300 underline-offset-2">completely without platform rate limits</span>.
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-indigo-100/80 text-[11px] font-medium text-slate-600">
+                  <span className="text-slate-400 font-semibold uppercase text-[10px]">Built-in models:</span>
+                  <span className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 border border-slate-200 text-slate-700 shadow-2xs">✨ Gemini 3.6 Flash</span>
+                  <span className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 border border-slate-200 text-slate-700 shadow-2xs">🦙 Llama 3.2</span>
+                  <span className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 border border-slate-200 text-slate-700 shadow-2xs">⚡ Qwen 3</span>
+                  <span className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 border border-slate-200 text-slate-700 shadow-2xs">🌐 GLM 4.7</span>
+                  <span className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 border border-slate-200 text-slate-700 shadow-2xs">🟢 Nemotron</span>
+                </div>
+              </div>
             </div>
 
-            <div className="product-preview overflow-hidden rounded-lg border border-slate-800 bg-[#111317] text-white shadow-2xl">
-              <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 text-xs text-slate-300">
-                <span className="font-semibold text-white">Document workspace</span>
-                <span>Page 12 of 48</span>
+            <div className="product-preview overflow-hidden rounded-xl border border-slate-800 bg-[#111317] text-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-white/10 px-4 py-2.5 text-xs text-slate-300">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="font-semibold text-white">Document workspace</span>
+                </div>
+                <span className="text-slate-400">Page 12 of 48</span>
               </div>
-              <div className="grid min-h-[300px] grid-cols-[0.84fr_1.16fr]">
+
+              {/* AI Model Selector bar inside the preview display */}
+              <div className="flex items-center gap-1.5 overflow-x-auto border-b border-white/10 bg-slate-900/90 px-3 py-2 text-[11px] custom-scrollbar">
+                <span className="shrink-0 text-[10px] font-bold uppercase text-slate-400 mr-1">AI Model:</span>
+                <span className="shrink-0 flex items-center gap-1 rounded bg-indigo-600 px-2 py-0.5 font-medium text-white shadow-xs">
+                  <Sparkles size={11} /> Gemini 3.6 Flash
+                </span>
+                <span className="shrink-0 flex items-center gap-1 rounded bg-white/10 px-2 py-0.5 text-slate-300">
+                  Llama 3.2
+                </span>
+                <span className="shrink-0 flex items-center gap-1 rounded bg-white/10 px-2 py-0.5 text-slate-300">
+                  Qwen 3
+                </span>
+                <span className="shrink-0 flex items-center gap-1 rounded bg-white/10 px-2 py-0.5 text-slate-300">
+                  Nemotron
+                </span>
+                <span className="shrink-0 flex items-center gap-1 rounded border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 font-semibold text-amber-300">
+                  ⚡ Custom API (Unlimited)
+                </span>
+              </div>
+
+              <div className="grid min-h-[290px] grid-cols-[0.84fr_1.16fr]">
                 <div className="border-r border-white/10 bg-white p-4 text-slate-900">
                   <p className="text-[10px] font-semibold uppercase text-slate-400">Lecture 04</p>
-                  <h2 className="mt-8 text-base font-semibold leading-snug">Convolutional neural networks</h2>
-                  <div className="mt-5 h-1.5 w-24 rounded bg-slate-200" />
+                  <h2 className="mt-6 text-base font-semibold leading-snug">Convolutional neural networks</h2>
+                  <div className="mt-4 h-1.5 w-24 rounded bg-slate-200" />
                   <div className="mt-2 h-1.5 w-full rounded bg-slate-100" />
                   <div className="mt-2 h-1.5 w-4/5 rounded bg-slate-100" />
                 </div>
                 <div className="flex flex-col justify-between p-4">
                   <div>
-                    <p className="text-[10px] font-semibold uppercase text-indigo-300">AI page assistant</p>
-                    <div className="mt-4 rounded-md border border-white/10 bg-white/5 p-3 text-xs leading-5 text-slate-200">Explain max pooling in simpler terms.</div>
-                    <div className="mt-3 rounded-md bg-white p-3 text-xs leading-5 text-slate-800">Max pooling keeps the strongest signal from each small area, making the network faster while preserving the most useful features.</div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-300">AI page assistant</p>
+                      <span className="text-[10px] text-slate-400 font-mono">Gemini 3.6 Flash</span>
+                    </div>
+                    <div className="mt-3 rounded-md border border-white/10 bg-white/5 p-2.5 text-xs leading-5 text-slate-200">Explain max pooling and stride in simple terms.</div>
+                    <div className="mt-2.5 rounded-md bg-white p-3 text-xs leading-5 text-slate-800 shadow-sm">
+                      <p className="font-semibold text-indigo-900 mb-1">Key concepts on this page:</p>
+                      <p><strong>Max pooling:</strong> Keeps the strongest feature from each receptive window, speeding up computation.</p>
+                      <p className="mt-1"><strong>Stride (s):</strong> Controls the shift step size across spatial dimensions without raw LaTeX symbols.</p>
+                    </div>
                   </div>
-                  <div className="mt-5 flex flex-wrap gap-2 text-[10px] font-medium">
-                    <span className="rounded border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-emerald-200">Note saved to page 12</span>
-                    <span className="rounded border border-indigo-400/30 bg-indigo-400/10 px-2 py-1 text-indigo-200">Whole-document context on</span>
+                  <div className="mt-3 flex flex-wrap gap-1.5 text-[10px] font-medium">
+                    <span className="rounded border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-emerald-200">Note saved to page 12</span>
+                    <span className="rounded border border-indigo-400/30 bg-indigo-400/10 px-2 py-0.5 text-indigo-200">Whole-document context on</span>
+                    <span className="rounded border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-amber-200">Custom API ∞</span>
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* AI Models & Custom API Freedom Showcase */}
+      <section className="border-b border-black/10 bg-slate-50/70 py-10">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="text-center max-w-2xl mx-auto mb-8">
+            <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">World-Class AI Models & Unlimited API Freedom</h2>
+            <p className="mt-2 text-sm text-slate-600">Choose from top frontier intelligence models, or connect your own API key to study with zero limits and total privacy.</p>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+            {/* Gemini */}
+            <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs flex flex-col justify-between hover:border-indigo-300 transition-all">
+              <div>
+                <span className="text-lg">✨</span>
+                <h3 className="font-bold text-slate-900 text-xs mt-1">Google Gemini</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">Gemini 3.6 Flash & 3.5 Flash-Lite</p>
+              </div>
+              <span className="mt-2 inline-block rounded bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold text-indigo-700 w-fit">Fast Multimodal</span>
+            </div>
+
+            {/* Llama */}
+            <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs flex flex-col justify-between hover:border-blue-300 transition-all">
+              <div>
+                <span className="text-lg">🦙</span>
+                <h3 className="font-bold text-slate-900 text-xs mt-1">Meta Llama</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">Llama 3.2 & 3.1 Instruct</p>
+              </div>
+              <span className="mt-2 inline-block rounded bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold text-blue-700 w-fit">Open Weights</span>
+            </div>
+
+            {/* Qwen */}
+            <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs flex flex-col justify-between hover:border-purple-300 transition-all">
+              <div>
+                <span className="text-lg">⚡</span>
+                <h3 className="font-bold text-slate-900 text-xs mt-1">Alibaba Qwen</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">Qwen 3 30B FP8</p>
+              </div>
+              <span className="mt-2 inline-block rounded bg-purple-50 px-1.5 py-0.5 text-[9px] font-bold text-purple-700 w-fit">STEM & Math</span>
+            </div>
+
+            {/* GLM */}
+            <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs flex flex-col justify-between hover:border-violet-300 transition-all">
+              <div>
+                <span className="text-lg">🌐</span>
+                <h3 className="font-bold text-slate-900 text-xs mt-1">Zhipu GLM</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">GLM 4.7 Flash</p>
+              </div>
+              <span className="mt-2 inline-block rounded bg-violet-50 px-1.5 py-0.5 text-[9px] font-bold text-violet-700 w-fit">Long Context</span>
+            </div>
+
+            {/* Gemma */}
+            <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs flex flex-col justify-between hover:border-teal-300 transition-all">
+              <div>
+                <span className="text-lg">💎</span>
+                <h3 className="font-bold text-slate-900 text-xs mt-1">Google Gemma</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">Gemma 4 26B</p>
+              </div>
+              <span className="mt-2 inline-block rounded bg-teal-50 px-1.5 py-0.5 text-[9px] font-bold text-teal-700 w-fit">Precision</span>
+            </div>
+
+            {/* Nemotron */}
+            <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs flex flex-col justify-between hover:border-emerald-300 transition-all">
+              <div>
+                <span className="text-lg">🟢</span>
+                <h3 className="font-bold text-slate-900 text-xs mt-1">NVIDIA</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">Nemotron 3 120B</p>
+              </div>
+              <span className="mt-2 inline-block rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 w-fit">Engineering</span>
+            </div>
+
+            {/* Custom API */}
+            <div className="col-span-2 sm:col-span-1 rounded-xl border-2 border-amber-300 bg-gradient-to-b from-amber-50/60 to-white p-3.5 shadow-xs flex flex-col justify-between hover:border-amber-400 transition-all">
+              <div>
+                <span className="text-lg">🔑</span>
+                <h3 className="font-bold text-slate-900 text-xs mt-1">Custom API</h3>
+                <p className="text-[11px] text-slate-600 mt-0.5">OpenAI, Claude, Groq, DeepSeek</p>
+              </div>
+              <span className="mt-2 inline-block rounded bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold text-white w-fit shadow-2xs">∞ NO LIMITS</span>
             </div>
           </div>
         </div>
