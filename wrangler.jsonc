@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "ai-pdf-study-assistant",
+  "name": "notemydocai",
   "pages_build_output_dir": "./dist/pages",
   "compatibility_date": "2026-05-22",
   "compatibility_flags": ["nodejs_compat"],
@@ -10,11 +10,11 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "study-assistant-production",
-      "database_id": "1d6acb45-9d9e-4044-98f7-f9308235e367"
+      "database_name": "notemydocai-production",
+      "database_id": "e207ca0a-79ec-4747-9599-7c4dfbc78224"
     }
   ],
   "vars": {
-    "ADMIN_EMAILS": "shihabmuhtasim.cs@gmail.com"
+    "ADMIN_EMAILS": "notemydocai@gmail.com"
   }
 }

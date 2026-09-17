@@ -9,8 +9,8 @@
     "start": "vinext start",
     "deploy:cloudflare": "npm run build && vinext-cloudflare deploy --config dist/server/wrangler.json --skip-build",
     "prepare:pages": "node scripts/prepare-pages-deploy.mjs",
-    "deploy:pages": "npm run build && npm run prepare:pages && wrangler pages deploy dist/pages --project-name ai-pdf-study-assistant --branch main",
-    "deploy:staging": "npm run build && npm run prepare:pages && cd staging && wrangler pages deploy ../dist/pages --project-name ai-pdf-study-assistant-staging --branch staging",
+    "deploy:pages": "npm run build && npm run prepare:pages && wrangler pages deploy dist/pages --project-name notemydocai --branch main",
+    "deploy:staging": "npm run build && npm run prepare:pages && cd staging && wrangler pages deploy ../dist/pages --project-name notemydocai-staging --branch staging",
     "lint": "tsc --noEmit",
     "test": "node --experimental-strip-types --test server/*.test.ts",
     "db:generate": "drizzle-kit generate"
