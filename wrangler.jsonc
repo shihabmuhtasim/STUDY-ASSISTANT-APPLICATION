@@ -13,8 +13,5 @@
       "database_name": "notemydocai-production",
       "database_id": "e207ca0a-79ec-4747-9599-7c4dfbc78224"
     }
-  ],
-  "vars": {
-    "ADMIN_EMAILS": "notemydocai@gmail.com,shihabmuhtasim.cs@gmail.com"
-  }
+  ]
 }
