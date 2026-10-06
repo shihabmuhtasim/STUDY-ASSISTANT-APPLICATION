@@ -272,7 +272,7 @@ export default function App({ initialAccount }: AppProps) {
   }, [account, documentsLoaded, driveToken, synchronizeDrive]);
 
   const handleAddDocument = async (doc: StudyDocument) => {
-    if (!account) throw new Error('Sign in before adding a document.');
+    const userId = account?.userId ?? 'guest';
     let nextDocument: StudyDocument = {
       ...doc,
       mimeType: doc.fileData instanceof Blob ? doc.fileData.type : 'application/pdf',
@@ -281,28 +281,30 @@ export default function App({ initialAccount }: AppProps) {
     };
     let newDocs = [...documents, nextDocument];
     setDocuments(newDocs);
-    await persistLocalDocuments(account.userId, newDocs);
-    try {
-      await saveCloudDocument(account.userId, nextDocument);
-    } catch (error) {
-      console.error('Failed to save document metadata', error);
-      setCloudMessage('The document is available on this device. Account metadata will synchronize when the cloud service is available.');
-    }
-
-    if (driveToken) {
+    await persistLocalDocuments(userId, newDocs);
+    if (account) {
       try {
-        const driveFile = await uploadDocumentToDrive(nextDocument, driveToken);
-        nextDocument = { ...nextDocument, driveFileId: driveFile.id, mimeType: driveFile.mimeType, fileSize: Number(driveFile.size) || nextDocument.fileSize, cloudStatus: 'synced' };
-        newDocs = newDocs.map((item) => item.id === nextDocument.id ? nextDocument : item);
-        setDocuments(newDocs);
-        await persistLocalDocuments(account.userId, newDocs);
         await saveCloudDocument(account.userId, nextDocument);
       } catch (error) {
-        nextDocument = { ...nextDocument, cloudStatus: 'error' };
-        newDocs = newDocs.map((item) => item.id === nextDocument.id ? nextDocument : item);
-        setDocuments(newDocs);
-        await persistLocalDocuments(account.userId, newDocs);
-        setCloudMessage('The document is available locally. Google Drive backup will retry when you resume sync.');
+        console.error('Failed to save document metadata', error);
+        setCloudMessage('The document is available on this device. Account metadata will synchronize when the cloud service is available.');
+      }
+
+      if (driveToken) {
+        try {
+          const driveFile = await uploadDocumentToDrive(nextDocument, driveToken);
+          nextDocument = { ...nextDocument, driveFileId: driveFile.id, mimeType: driveFile.mimeType, fileSize: Number(driveFile.size) || nextDocument.fileSize, cloudStatus: 'synced' };
+          newDocs = newDocs.map((item) => item.id === nextDocument.id ? nextDocument : item);
+          setDocuments(newDocs);
+          await persistLocalDocuments(account.userId, newDocs);
+          await saveCloudDocument(account.userId, nextDocument);
+        } catch (error) {
+          nextDocument = { ...nextDocument, cloudStatus: 'error' };
+          newDocs = newDocs.map((item) => item.id === nextDocument.id ? nextDocument : item);
+          setDocuments(newDocs);
+          await persistLocalDocuments(account.userId, newDocs);
+          setCloudMessage('The document is available locally. Google Drive backup will retry when you resume sync.');
+        }
       }
     }
     return nextDocument;
