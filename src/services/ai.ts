@@ -15,9 +15,11 @@ export async function askAIAboutPage(input: {
   scope?: 'page' | 'document';
   referencesEnabled?: boolean;
   pageImage?: string;
+  attachmentImages?: string[];
   history: AIInteraction[];
   modelPreference: AIModelPreference;
   allowFallback: boolean;
+  purpose?: 'voice-notes';
   signal?: AbortSignal;
 }): Promise<{ response: string; remaining?: number; remainingPercent?: number; usageCharged?: number; provider?: AIInteraction['provider']; model?: string; requestedModel?: AIModelPreference; fallbackUsed?: boolean }> {
   const user = firebaseAuth.currentUser;
@@ -37,9 +39,11 @@ export async function askAIAboutPage(input: {
       scope: input.scope || 'page',
       referencesEnabled: input.referencesEnabled === true,
       pageImage: input.pageImage,
+      attachmentImages: input.attachmentImages,
       history: input.history.slice(-2).map((item) => ({ prompt: item.prompt.slice(0, 700), response: item.response.slice(0, 1_800) })),
       modelPreference: input.modelPreference,
       allowFallback: input.allowFallback,
+      purpose: input.purpose,
     }),
   });
 

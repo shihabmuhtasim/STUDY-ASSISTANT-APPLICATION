@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useVoiceNotes, type VoiceJob } from './useVoiceNotes';
 import { VoiceNotesPanel, VoiceNotesDialog } from './VoiceNotesPanel';
 import { AIConnectionsModal } from './AIConnectionsModal';
@@ -8,14 +8,16 @@ import { NotesPanel } from './NotesPanel';
 import { AIAssistant } from './AIAssistant';
 import { AccountIdentity, AccountSummary, StudyDocument, PageNote, AIInteraction, NoteBlock, AnnotationStroke, AISourceReference, PDFCitationTarget } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { ArrowLeft, Download, BookOpen, GripVertical, GripHorizontal, FileText, Sparkles, LayoutGrid, Eye, Files, Maximize2, Mic, Minimize2, SlidersHorizontal, Wrench } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, BookOpen, GripVertical, GripHorizontal, FileText, Sparkles, LayoutGrid, Eye, Files, Maximize2, Mic, Minimize2, Plus, SlidersHorizontal, Wrench } from 'lucide-react';
 import { get, set } from 'idb-keyval';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
-import { exportStudyPackPDF } from '../utils/pdfExport';
+import { exportNotesOnlyPDF, exportStudyPackPDF, richContentToStructuredText } from '../utils/pdfExport';
 import { markdownToRichTextHtml, toRichTextHtml } from './RichTextEditor';
 import { loadCloudWorkspace, saveCloudPage } from '../services/cloudData';
+import { insertPdfPages, shiftPageData } from '../utils/pdfPages';
 
 interface StudyInterfaceProps {
+  onCreateEditedDocument: (document: StudyDocument) => Promise<void>;
   document: StudyDocument;
   onBack: () => void;
   account: AccountSummary | AccountIdentity | null;
@@ -25,13 +27,16 @@ interface StudyInterfaceProps {
   onUpgrade: () => void;
 }
 
-export function StudyInterface({ document, onBack, account, onAccountChange, onUpdateDocument, onStudyModeChange, onUpgrade }: StudyInterfaceProps) {
+export function StudyInterface({ document, onBack, account, onAccountChange, onUpdateDocument, onStudyModeChange, onUpgrade, onCreateEditedDocument }: StudyInterfaceProps) {
+  const [inserting, setInserting] = useState(false);
+  const insertLock = useRef(false);
+  const isNotebook = document.kind === 'notebook';
   const [pageNumber, setPageNumber] = useState(1);
   const [pageImage, setPageImage] = useState<string | null>(null);
   const [pageText, setPageText] = useState('');
   const [documentContext, setDocumentContext] = useState('');
   const [documentPages, setDocumentPages] = useState<string[]>([]);
-  const [isDocumentContextLoading, setIsDocumentContextLoading] = useState(true);
+  const [isDocumentContextLoading, setIsDocumentContextLoading] = useState(!isNotebook);
   const [documentContextProgress, setDocumentContextProgress] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<number, PageNote>>({});
   const [isNotesLoaded, setIsNotesLoaded] = useState(false);
@@ -50,10 +55,10 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   const [voiceConnectionsOpen, setVoiceConnectionsOpen] = useState(false);
 
   // Universal Layout Mode: 'split' (all 3 panes visible) | 'tabs' (1 pane visible with tab navigation) | 'pdf-only'
-  const [layoutMode, setLayoutMode] = useState<'split' | 'tabs' | 'pdf-only'>('split');
+  const [layoutMode, setLayoutMode] = useState<'split' | 'tabs' | 'pdf-only'>(isNotebook ? 'tabs' : 'split');
 
   // Active Tab when in 'tabs' mode: document, notes, manual AI chat, or generated voice notes.
-  const [activeTab, setActiveTab] = useState<'pdf' | 'notes' | 'ai' | 'voice'>('pdf');
+  const [activeTab, setActiveTab] = useState<'pdf' | 'notes' | 'ai' | 'voice'>(isNotebook ? 'notes' : 'pdf');
 
   // Keep narrow screens in the tabbed layout so panels cannot overlap.
   useEffect(() => {
@@ -161,6 +166,15 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     blocks: [],
     aiHistory: [],
   };
+  const notebookPages = useMemo(() => Array.from(
+    { length: Math.max(1, document.totalPages) },
+    (_, index) => richContentToStructuredText(notes[index + 1]?.content || '')
+  ), [document.totalPages, notes]);
+  const effectiveDocumentPages = isNotebook ? notebookPages : documentPages;
+  const effectivePageText = isNotebook ? notebookPages[pageNumber - 1] || '' : pageText;
+  const effectiveDocumentContext = isNotebook
+    ? notebookPages.map((text, index) => `[Page ${index + 1}]\n${text}`).join('\n\n')
+    : documentContext;
 
   useEffect(() => {
     if (!isNotesLoaded) return;
@@ -293,7 +307,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
 
   const voice = useVoiceNotes({
     userId: account?.userId, documentId: document.id, pageNumber,
-    pageText: documentPages[pageNumber - 1] || '',
+    pageText: effectiveDocumentPages[pageNumber - 1] || '',
     onSave: handleInsertRecordingNotes,
   });
   const voicePending = voice.jobs.filter((job) => job.status !== 'saved').length;
@@ -313,10 +327,35 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   const handleReferenceSelect = (reference: AISourceReference) => {
     setCitationTarget({ ...reference, requestId: Date.now() });
     setPageNumber(reference.pageNumber);
-    if (layoutMode === 'tabs') setActiveTab('pdf');
+    if (layoutMode === 'tabs') setActiveTab(isNotebook ? 'notes' : 'pdf');
+  };
+
+  const handleInsertPages = async (file?: File) => {
+    if (insertLock.current || !isNotesLoaded || !areAnnotationsLoaded) return;
+    if (voice.session.phase !== 'idle' || voicePending) { window.alert('Finish recording and save or resolve pending voice notes before inserting pages.'); return; }
+    insertLock.current = true;
+    setInserting(true);
+    try {
+      window.dispatchEvent(new Event('study-flush-notes'));
+      const result = await insertPdfPages(document.fileData, pageNumber, file);
+      const id = uuidv4();
+      const shifted = shiftPageData(notesRef.current, annotations, pageNumber, result.added, id);
+      await set(`notes_${id}`, shifted.notes);
+      await set(`annotations_${id}`, shifted.annotations);
+      if (account) {
+        const pages = new Set([...Object.keys(shifted.notes), ...Object.keys(shifted.annotations)]);
+        for (const key of pages) {
+          const page = Number(key);
+          await saveCloudPage(account.userId, id, page, shifted.notes[page] || { id: uuidv4(), documentId: id, pageNumber: page, content: '', blocks: [], aiHistory: [] }, shifted.annotations[page] || []);
+        }
+      }
+      await onCreateEditedDocument({ ...document, id, title: `${document.title} (edited)`, fileData: result.blob, totalPages: result.totalPages, driveFileId: undefined, sourceFormat: 'pdf', originalFileName: `${document.title} (edited).pdf`, mimeType: 'application/pdf', fileSize: result.blob.size, cloudStatus: 'local', createdAt: Date.now(), updatedAt: Date.now() });
+    } catch (error) { window.alert(`Could not insert pages: ${error instanceof Error ? error.message : 'Please try again.'}`); }
+    finally { insertLock.current = false; setInserting(false); }
   };
 
   const pdfViewerProps = {
+    onInsertPages: handleInsertPages,
     file: document.fileData,
     pageNumber,
     setPageNumber,
@@ -346,12 +385,13 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
 
   const aiAssistantProps = {
     pageNumber,
-    pageImage,
-    pageText: studyScope === 'document' ? '' : pageText,
-    documentContext,
-    documentPages,
-    isDocumentContextLoading,
-    documentContextProgress,
+    pageImage: isNotebook ? null : pageImage,
+    pageText: studyScope === 'document' ? '' : effectivePageText,
+    documentContext: effectiveDocumentContext,
+    documentPages: effectiveDocumentPages,
+    isDocumentContextLoading: isNotebook ? false : isDocumentContextLoading,
+    documentContextProgress: isNotebook ? null : documentContextProgress,
+    allowEmptyContext: isNotebook,
     scope: studyScope,
     history: currentNote.aiHistory || [],
     account,
@@ -368,13 +408,17 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   const handleExport = async () => {
     try {
       setIsExporting(true);
-      await exportStudyPackPDF(
-        document.title || 'Study_Pack',
-        document.fileData,
-        notes,
-        annotations,
-        (progress) => setExportProgress(progress)
-      );
+      if (isNotebook) {
+        await exportNotesOnlyPDF(document.title || 'Notebook', notes, document.totalPages, setExportProgress);
+      } else {
+        await exportStudyPackPDF(
+          document.title || 'Study_Pack',
+          document.fileData,
+          notes,
+          annotations,
+          setExportProgress
+        );
+      }
     } catch (error) {
       console.error("Export failed:", error);
       alert("Failed to export notes. Please check the console for details.");
@@ -384,8 +428,17 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     }
   };
 
+  const addNotebookPage = () => {
+    const totalPages = Math.max(1, document.totalPages) + 1;
+    onUpdateDocument({ ...document, totalPages, updatedAt: Date.now() });
+    setStudyScope('page');
+    setPageNumber(totalPages);
+    setActiveTab('notes');
+  };
+
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-slate-50 font-sans">
+      {inserting && <div role="status" className="absolute inset-0 z-[100] flex items-center justify-center bg-white/90 text-slate-800">Inserting pages and saving your edited copy...</div>}
       {studyMode && !studyControlsOpen && (
         <button type="button" onClick={() => setStudyControlsOpen(true)} className="absolute left-3 top-3 z-50 flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white/95 px-3 text-sm font-semibold text-slate-700 shadow-lg backdrop-blur hover:border-indigo-300 hover:text-indigo-700" title="Show study tools" aria-label="Show study tools"><Wrench size={16} /><span>Tools</span></button>
       )}
@@ -409,7 +462,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
 
         {/* Global Layout Switcher for Laptop, Tablet & Mobile */}
         <div className="flex items-center gap-2">
-          <button
+          {!isNotebook && <button
             type="button"
             onClick={() => {
               setStudyScope((current) => {
@@ -424,8 +477,8 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
             <Files size={15} />
             <span className="hidden sm:inline">{studyScope === 'document' ? 'Whole document' : 'Study whole document'}</span>
             <span className="sm:hidden">Whole PDF</span>
-          </button>
-          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+          </button>}
+          {!isNotebook && <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
             <button
               onClick={() => setLayoutMode('split')}
               className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
@@ -461,7 +514,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
               <span className="hidden md:inline">Document Focus</span>
               <span className="md:hidden">Document</span>
             </button>
-          </div>
+          </div>}
 
           {studyMode && <button type="button" onClick={() => setStudyControlsOpen(false)} className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-indigo-700" title="Hide study controls" aria-label="Hide study controls"><SlidersHorizontal size={15} /></button>}
 
@@ -484,7 +537,19 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
         </div>
       </header>}
 
-      {studyScope === 'document' && (!studyMode || studyControlsOpen) && (
+      {isNotebook && (!studyMode || studyControlsOpen) && (
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2">
+          <span className="text-xs font-semibold text-slate-600">Notebook page</span>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => setPageNumber((page) => Math.max(1, page - 1))} disabled={pageNumber <= 1} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-600 disabled:opacity-35" title="Previous notebook page"><ChevronLeft size={16} /></button>
+            <span className="min-w-16 text-center text-sm font-semibold text-slate-800">{pageNumber} / {Math.max(1, document.totalPages)}</span>
+            <button type="button" onClick={() => setPageNumber((page) => Math.min(Math.max(1, document.totalPages), page + 1))} disabled={pageNumber >= Math.max(1, document.totalPages)} className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 text-slate-600 disabled:opacity-35" title="Next notebook page"><ChevronRight size={16} /></button>
+            <button type="button" onClick={addNotebookPage} className="ml-1 inline-flex h-8 items-center gap-1.5 rounded-md bg-indigo-600 px-3 text-xs font-semibold text-white hover:bg-indigo-700"><Plus size={14} />Add page</button>
+          </div>
+        </div>
+      )}
+
+      {!isNotebook && studyScope === 'document' && (!studyMode || studyControlsOpen) && (
         <div className="flex shrink-0 items-center justify-between gap-4 border-b border-indigo-200 bg-indigo-50 px-4 py-2 text-indigo-950">
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-indigo-600 text-white"><Files size={16} /></span>
@@ -495,9 +560,9 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
       )}
 
       {/* Tab Selector Bar when in 'tabs' layout mode */}
-      {layoutMode === 'tabs' && (!studyMode || studyControlsOpen) && (
+      {(layoutMode === 'tabs' || isNotebook) && (!studyMode || studyControlsOpen) && (
         <div className="flex items-center justify-around bg-white border-b border-slate-200 px-2 py-1.5 shrink-0 z-20 shadow-2xs">
-          <button
+          {!isNotebook && <button
             onClick={() => setActiveTab('pdf')}
             className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
               activeTab === 'pdf'
@@ -507,7 +572,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
           >
             <BookOpen size={16} />
             <span>Document Reader</span>
-          </button>
+          </button>}
 
           <button
             onClick={() => setActiveTab('notes')}
@@ -555,15 +620,15 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
 
       {/* Main Workspace Body */}
       <main className={`flex-1 overflow-hidden relative ${studyMode ? 'p-0' : 'p-2 lg:p-3'}`}>
-        {layoutMode === 'pdf-only' ? (
+        {layoutMode === 'pdf-only' && !isNotebook ? (
           /* Document Reader Full Screen */
           <div className="h-full w-full p-1">
             <PDFViewer {...pdfViewerProps} />
           </div>
-        ) : layoutMode === 'tabs' ? (
+        ) : layoutMode === 'tabs' || isNotebook ? (
           /* Single Tab View */
           <div className="h-full w-full relative">
-            {activeTab === 'pdf' && (
+            {!isNotebook && activeTab === 'pdf' && (
               <div className="h-full w-full flex flex-col relative">
                 <PDFViewer {...pdfViewerProps} />
                 

@@ -1,16 +1,17 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Maximize2, Move, Trash2 } from 'lucide-react';
-import { AnnotationStroke, AnnotationTool, InkAnnotation, TextAnnotation } from '../types';
+import { AnnotationStroke, AnnotationTool, InkAnnotation, TextAnnotation, ImageAnnotation } from '../types';
 
 interface AnnotationCanvasProps {
   enabled: boolean;
   tool: AnnotationTool;
   color: string;
+  highlightWidth?: number;
   strokes: AnnotationStroke[];
   onChange: (strokes: AnnotationStroke[]) => void;
 }
 
-export function AnnotationCanvas({ enabled, tool, color, strokes, onChange }: AnnotationCanvasProps) {
+export function AnnotationCanvas({ enabled, tool, color, highlightWidth = 0.025, strokes, onChange }: AnnotationCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const drawing = useRef<InkAnnotation | null>(null);
@@ -21,7 +22,7 @@ export function AnnotationCanvas({ enabled, tool, color, strokes, onChange }: An
     id: string;
     startX: number;
     startY: number;
-    annotation: TextAnnotation;
+    annotation: TextAnnotation | ImageAnnotation;
   } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
@@ -44,7 +45,7 @@ export function AnnotationCanvas({ enabled, tool, color, strokes, onChange }: An
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
     context.clearRect(0, 0, rect.width, rect.height);
     [...strokes, ...(preview ? [preview] : [])].forEach((stroke) => {
-      if (stroke.tool === 'text') return;
+      if (stroke.tool === 'text' || stroke.tool === 'image') return;
       if (stroke.points.length === 0) return;
       context.beginPath();
       context.lineCap = 'round';
@@ -88,7 +89,7 @@ export function AnnotationCanvas({ enabled, tool, color, strokes, onChange }: An
     if (!enabled) return;
     const point = pointFromEvent(event);
     if (tool === 'eraser') {
-      const hit = [...strokes].reverse().find((stroke) => stroke.tool !== 'text' && stroke.points.some((item) => Math.hypot(item.x - point.x, item.y - point.y) < 0.035));
+      const hit = [...strokes].reverse().find((stroke) => (stroke.tool === 'pen' || stroke.tool === 'highlight') && stroke.points.some((item) => Math.hypot(item.x - point.x, item.y - point.y) < 0.035));
       if (hit) onChange(strokes.filter((stroke) => stroke.id !== hit.id));
       return;
     }
@@ -114,7 +115,7 @@ export function AnnotationCanvas({ enabled, tool, color, strokes, onChange }: An
       id: crypto.randomUUID(),
       tool,
       color,
-      width: tool === 'highlight' ? 0.025 : 0.004,
+      width: tool === 'highlight' ? highlightWidth : 0.004,
       points: [point],
     };
     redraw(drawing.current);
@@ -132,16 +133,16 @@ export function AnnotationCanvas({ enabled, tool, color, strokes, onChange }: An
     drawing.current = null;
   };
 
-  const updateTextAnnotation = (id: string, changes: Partial<TextAnnotation>) => {
+  const updateTextAnnotation = (id: string, changes: Partial<Omit<TextAnnotation, 'id' | 'tool'>>) => {
     onChange(strokesRef.current.map((annotation) => (
-      annotation.id === id && annotation.tool === 'text' ? { ...annotation, ...changes } : annotation
+      annotation.id === id && (annotation.tool === 'text' || annotation.tool === 'image') ? { ...annotation, ...changes } : annotation
     )));
   };
 
-  const startTextInteraction = (event: React.PointerEvent<HTMLButtonElement>, annotation: TextAnnotation, kind: 'move' | 'resize') => {
+  const startTextInteraction = (event: React.PointerEvent<HTMLElement>, annotation: TextAnnotation | ImageAnnotation, kind: 'move' | 'resize') => {
     event.preventDefault();
     event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
+    rootRef.current?.setPointerCapture(event.pointerId);
     interaction.current = {
       kind,
       id: annotation.id,
@@ -151,10 +152,10 @@ export function AnnotationCanvas({ enabled, tool, color, strokes, onChange }: An
     };
   };
 
-  const moveTextInteraction = (event: React.PointerEvent<HTMLButtonElement>) => {
+  const moveTextInteraction = (event: React.PointerEvent<HTMLElement>) => {
     const active = interaction.current;
     const root = rootRef.current;
-    if (!active || !root || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    if (!active || !root) return;
     const rect = root.getBoundingClientRect();
     const dx = (event.clientX - active.startX) / Math.max(1, rect.width);
     const dy = (event.clientY - active.startY) / Math.max(1, rect.height);
@@ -178,7 +179,7 @@ export function AnnotationCanvas({ enabled, tool, color, strokes, onChange }: An
   const cursorClass = tool === 'text' ? 'cursor-text' : 'cursor-crosshair';
 
   return (
-    <div ref={rootRef} className={`absolute inset-0 z-20 ${enabled ? 'pointer-events-auto' : 'pointer-events-none'}`}>
+    <div ref={rootRef} onPointerMove={moveTextInteraction} onPointerUp={finishTextInteraction} onPointerCancel={finishTextInteraction} className={`absolute inset-0 z-20 touch-none ${enabled ? 'pointer-events-auto' : 'pointer-events-none'}`}>
       <canvas
         ref={canvasRef}
         className={`absolute inset-0 h-full w-full ${enabled ? `pointer-events-auto ${cursorClass}` : 'pointer-events-none'}`}
@@ -187,6 +188,16 @@ export function AnnotationCanvas({ enabled, tool, color, strokes, onChange }: An
         onPointerUp={finishStroke}
         onPointerCancel={finishStroke}
       />
+      {strokes.filter((annotation): annotation is ImageAnnotation => annotation.tool === 'image').map(annotation => (
+        <div key={annotation.id} className={`absolute ${enabled ? 'pointer-events-auto border border-dashed border-indigo-400' : 'pointer-events-none'}`} style={{ left: `${annotation.x * 100}%`, top: `${annotation.y * 100}%`, width: `${annotation.width * 100}%`, height: `${annotation.height * 100}%` }}>
+          <img src={annotation.dataUrl} alt="Image annotation" draggable={false} className="h-full w-full" onPointerDown={event => { if (enabled) startTextInteraction(event, annotation, 'move'); }} />
+          {enabled && <div className="absolute right-0 top-0 flex rounded bg-white shadow">
+            <button title="Move image" className="touch-none cursor-move p-2 text-slate-600" onPointerDown={event => startTextInteraction(event, annotation, 'move')}><Move size={16} /></button>
+            <button title="Resize image" className="touch-none cursor-se-resize p-2 text-slate-600" onPointerDown={event => startTextInteraction(event, annotation, 'resize')}><Maximize2 size={16} /></button>
+            <button title="Delete image" className="p-2 text-red-600" onClick={() => onChange(strokesRef.current.filter(item => item.id !== annotation.id))}><Trash2 size={16} /></button>
+          </div>}
+        </div>
+      ))}
       {strokes.filter((annotation): annotation is TextAnnotation => annotation.tool === 'text').map((annotation) => {
         const isEditing = enabled && editingId === annotation.id;
         return (
@@ -227,7 +238,7 @@ export function AnnotationCanvas({ enabled, tool, color, strokes, onChange }: An
               <div className="absolute right-1 top-1 flex items-center gap-0.5 rounded bg-white/95 p-0.5 shadow-sm">
                 <button
                   type="button"
-                  className="cursor-move p-1 text-slate-500 hover:text-indigo-700"
+                  className="touch-none cursor-move p-2 text-slate-500 hover:text-indigo-700"
                   title="Move text box"
                   onPointerDown={(event) => startTextInteraction(event, annotation, 'move')}
                   onPointerMove={moveTextInteraction}
@@ -236,7 +247,7 @@ export function AnnotationCanvas({ enabled, tool, color, strokes, onChange }: An
                 ><Move size={13} /></button>
                 <button
                   type="button"
-                  className="cursor-se-resize p-1 text-slate-500 hover:text-indigo-700"
+                  className="touch-none cursor-se-resize p-2 text-slate-500 hover:text-indigo-700"
                   title="Resize text box"
                   onPointerDown={(event) => startTextInteraction(event, annotation, 'resize')}
                   onPointerMove={moveTextInteraction}

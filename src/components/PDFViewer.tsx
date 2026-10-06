@@ -4,6 +4,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { ChevronLeft, ChevronRight, Eraser, Highlighter, Loader2, PenLine, RotateCcw, Search, Trash2, Type, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { AnnotationStroke, AnnotationTool, PDFCitationTarget } from '../types';
 import { AnnotationCanvas } from './AnnotationCanvas';
+import { FilePlus2, FileUp, ImagePlus, Hand } from 'lucide-react';
 import { recognizeScannedPage } from '../services/ocr';
 import { findCitationSpanRange } from '../utils/citationHighlight';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -12,6 +13,7 @@ import 'react-pdf/dist/Page/TextLayer.css';
 pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
 interface PDFViewerProps {
+  onInsertPages?: (file?: File) => void;
   file: string | Blob;
   pageNumber: number;
   setPageNumber: (page: number) => void;
@@ -28,7 +30,7 @@ interface PDFViewerProps {
   onCitationDismiss?: () => void;
 }
 
-export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess, onPageTextReady, onDocumentContextReady, onDocumentPagesReady, onDocumentContextLoadingChange, onDocumentContextProgress, onDocumentLoaded, annotations, onAnnotationsChange, citationTarget = null, onCitationDismiss }: PDFViewerProps) {
+export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess, onPageTextReady, onDocumentContextReady, onDocumentPagesReady, onDocumentContextLoadingChange, onDocumentContextProgress, onDocumentLoaded, annotations, onAnnotationsChange, citationTarget = null, onCitationDismiss, onInsertPages }: PDFViewerProps) {
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [scale, setScale] = useState(1.0);
@@ -44,6 +46,8 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
   const [annotationEnabled, setAnnotationEnabled] = useState(false);
   const [annotationTool, setAnnotationTool] = useState<AnnotationTool>('pen');
   const [annotationColor, setAnnotationColor] = useState('#ef4444');
+  const [highlightWidth, setHighlightWidth] = useState(25);
+  const [panMode, setPanMode] = useState(false);
   const [renderVersion, setRenderVersion] = useState(0);
   const [citationHighlightStatus, setCitationHighlightStatus] = useState<'idle' | 'highlighted' | 'page-only'>('idle');
 
@@ -270,8 +274,8 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
   // Mouse Drag-to-Pan Handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!containerRef.current || annotationEnabled) return;
-    // Only initiate drag if left mouse button is clicked
-    if (e.button !== 0) return;
+    if (e.button !== 1 && !(e.button === 0 && (panMode || e.altKey))) return;
+    e.preventDefault();
 
     setIsPanning(true);
     setStartPos({
@@ -335,7 +339,7 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-100/80 rounded-lg overflow-hidden border border-slate-200 shadow-2xs select-none">
+    <div className="flex flex-col h-full bg-slate-100/80 rounded-lg overflow-hidden border border-slate-200 shadow-2xs">
       {/* Top Toolbar */}
       <div className="flex flex-wrap items-center justify-between p-2 bg-white border-b border-slate-200 shadow-2xs z-10 gap-2 shrink-0">
         {/* Page Controls */}
@@ -425,7 +429,8 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
           </button>
         </div>
 
-        <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+        <div className="flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+          <button type="button" onClick={() => { setPanMode(value => !value); setAnnotationEnabled(false); }} aria-pressed={panMode} title="Hand tool: drag to pan. Turn off to select and copy text." className={`p-1.5 rounded ${panMode ? 'bg-indigo-600 text-white' : 'text-slate-600'}`}><Hand size={15} /></button>
           <button type="button" onClick={() => { setAnnotationEnabled((value) => !value); setAnnotationTool('pen'); }} className={`p-1.5 rounded ${annotationEnabled ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-white'}`} title="Draw on PDF"><PenLine size={15} /></button>
           {annotationEnabled && (
             <>
@@ -434,12 +439,34 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
               <button type="button" onClick={() => setAnnotationTool('text')} className={`p-1.5 rounded ${annotationTool === 'text' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500'}`} title="Add text box"><Type size={15} /></button>
               <button type="button" onClick={() => setAnnotationTool('eraser')} className={`p-1.5 rounded ${annotationTool === 'eraser' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500'}`} title="Eraser"><Eraser size={15} /></button>
               <input type="color" aria-label="Annotation color" value={annotationColor} onChange={(event) => setAnnotationColor(event.target.value)} className="h-6 w-6 cursor-pointer border-0 bg-transparent p-0" />
+              {annotationTool === 'highlight' && <label className="flex items-center gap-1 text-xs text-slate-600" title="Highlighter width scales with the page"><span>Width</span><input type="range" aria-label="Highlighter width" min="5" max="80" step="5" value={highlightWidth} onChange={event => setHighlightWidth(Number(event.target.value))} className="w-20" /><output className="w-6">{highlightWidth}</output></label>}
               <button type="button" onClick={() => onAnnotationsChange(annotations.slice(0, -1))} disabled={annotations.length === 0} className="p-1.5 text-slate-500 disabled:opacity-25" title="Undo annotation"><Undo2 size={15} /></button>
               <button type="button" onClick={() => annotations.length > 0 && window.confirm('Clear annotations on this page?') && onAnnotationsChange([])} disabled={annotations.length === 0} className="p-1.5 text-slate-500 hover:text-red-600 disabled:opacity-25" title="Clear page annotations"><Trash2 size={15} /></button>
             </>
           )}
         </div>
 
+        <div className="flex items-center gap-1">
+          {onInsertPages && <>
+            <button title="Insert blank page after this page (edited copy)" onClick={() => onInsertPages()} className="p-2 text-slate-600 hover:bg-slate-100 rounded"><FilePlus2 size={17} /></button>
+            <label title="Insert PDF after this page (edited copy)" className="p-2 text-slate-600 hover:bg-slate-100 rounded cursor-pointer"><FileUp size={17} /><input aria-label="Insert PDF" type="file" accept="application/pdf,.pdf" className="sr-only" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) onInsertPages(file); }} /></label>
+          </>}
+          <label title="Add image to this page" className="p-2 text-slate-600 hover:bg-slate-100 rounded cursor-pointer"><ImagePlus size={17} /><input aria-label="Add image to PDF page" type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={async event => {
+            const imageFile = event.target.files?.[0]; event.target.value = ''; if (!imageFile) return;
+            try {
+              const image = await createImageBitmap(imageFile);
+              const canvas = window.document.createElement('canvas');
+              const scale = Math.min(1, 1000 / Math.max(image.width, image.height));
+              canvas.width = Math.max(1, Math.round(image.width * scale)); canvas.height = Math.max(1, Math.round(image.height * scale));
+              const context = canvas.getContext('2d')!; context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height); context.drawImage(image, 0, 0, canvas.width, canvas.height); image.close();
+              const rect = pageRef.current?.getBoundingClientRect();
+              const ratio = (canvas.height / canvas.width) * ((rect?.width || 595) / (rect?.height || 842));
+              const width = Math.min(0.5, 0.6 / ratio);
+              onAnnotationsChange([...annotations, { id: crypto.randomUUID(), tool: 'image', dataUrl: canvas.toDataURL('image/jpeg', 0.8), x: 0.1, y: 0.1, width, height: width * ratio }]);
+              setAnnotationEnabled(true);
+            } catch { window.alert('Could not open this image. Choose a PNG, JPEG, or WebP image.'); }
+          }} /></label>
+        </div>
         <form onSubmit={runSearch} className="order-last sm:order-none w-full sm:w-auto flex items-center gap-1">
           <label className="relative flex-1 sm:w-44">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -495,7 +522,7 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
         onTouchEnd={handleTouchEnd}
         style={{ touchAction: 'none' }}
         className={`flex-1 overflow-auto bg-slate-200/60 transition-colors ${
-          annotationEnabled ? 'cursor-default' : scale > 1.0 ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'
+          annotationEnabled ? 'cursor-default' : isPanning ? 'cursor-grabbing' : panMode ? 'cursor-grab' : 'cursor-default'
         }`}
       >
         <div className="flex min-h-full min-w-full w-max items-start justify-center p-4 lg:p-6">
@@ -524,7 +551,7 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
               className="block"
             />
           </Document>
-          <AnnotationCanvas enabled={annotationEnabled} tool={annotationTool} color={annotationColor} strokes={annotations} onChange={onAnnotationsChange} />
+          <AnnotationCanvas enabled={annotationEnabled} tool={annotationTool} color={annotationColor} highlightWidth={highlightWidth / 1000} strokes={annotations} onChange={onAnnotationsChange} />
         </div>
         </div>
       </div>

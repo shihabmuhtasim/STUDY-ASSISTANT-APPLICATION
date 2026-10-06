@@ -455,6 +455,7 @@ export default function App({ initialAccount }: AppProps) {
           account={account}
           onAccountChange={setAccount}
           onUpdateDocument={handleUpdateDocument}
+          onCreateEditedDocument={async (document) => { const saved = await handleAddDocument(document); setCurrentDocument(saved); }}
           onStudyModeChange={setStudyMode}
           onUpgrade={() => setInfoView('plans')}
         />

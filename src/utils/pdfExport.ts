@@ -18,6 +18,7 @@ interface RenderLine {
 }
 
 interface RenderBlock {
+  drawing?: NoteBlock['drawing'];
   isAi: boolean;
   question?: string;
   lines: RenderLine[];
@@ -56,13 +57,18 @@ function wrapCanvasText(context: CanvasRenderingContext2D, text: string, maxWidt
   return lines;
 }
 
-function drawAnnotationsOnCanvas(
+async function drawAnnotationsOnCanvas(
   context: CanvasRenderingContext2D,
   width: number,
   height: number,
   annotations: AnnotationStroke[]
 ) {
   for (const annotation of annotations) {
+    if (annotation.tool === 'image') {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = annotation.dataUrl; });
+      context.drawImage(image, annotation.x * width, annotation.y * height, annotation.width * width, annotation.height * height);
+      continue;
+    }
     context.save();
     if (annotation.tool !== 'text') {
       if (annotation.points.length === 0) {
@@ -197,7 +203,7 @@ export function parseMarkdownToCleanLines(text: string): CleanLine[] {
 function hasNoteContent(note?: PageNote): boolean {
   if (!note) return false;
   if (note.blocks && note.blocks.length > 0) {
-    return note.blocks.some((b) => Boolean(b.content?.trim() || b.question?.trim()));
+    return note.blocks.some((b) => Boolean(b.drawing || b.content?.trim() || b.question?.trim()));
   }
   return Boolean(note.content && richContentToStructuredText(note.content).trim().length > 0);
 }
@@ -215,6 +221,11 @@ function prepareRenderBlocks(doc: jsPDF, blocks: NoteBlock[], contentWidth: numb
   const renderBlocks: RenderBlock[] = [];
 
   for (const block of blocks) {
+    if (block.drawing) {
+      const width = (contentWidth - 18) * block.drawing.size / 100;
+      renderBlocks.push({ drawing: block.drawing, isAi: false, lines: [], height: Math.min(200, width * block.drawing.height / block.drawing.width) + 18 });
+      continue;
+    }
     const isAi = Boolean(block.isAiGenerated);
     const parsedLines = parseMarkdownToCleanLines(block.content || '');
 
@@ -401,6 +412,10 @@ function renderDynamicNotes(
       doc.rect(margin, y, 2.5, block.height, 'F');
 
       let textY = y + 7;
+      if (block.drawing) {
+        const width = Math.min((contentWidth - 18) * block.drawing.size / 100, (block.height - 18) * block.drawing.width / block.drawing.height);
+        doc.addImage(block.drawing.dataUrl, 'PNG', margin + 9, y + 9, width, width * block.drawing.height / block.drawing.width);
+      }
       for (const line of block.lines) {
         doc.setFontSize(line.fontSize);
         doc.setFont('helvetica', line.isBold ? 'bold' : 'normal');
@@ -435,14 +450,15 @@ export async function exportStudyPackPDF(
   annotations: Record<number, AnnotationStroke[]>,
   onProgress?: (progressText: string) => void
 ) {
-  const pdfjsLib = await import('pdfjs-dist');
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+  const { pdfjs } = await import('react-pdf');
+  // Re-use the existing worker src from the application
+  pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
   if (onProgress) onProgress('Loading original document...');
   const source = fileData instanceof Blob
     ? { data: new Uint8Array(await fileData.arrayBuffer()) }
     : fileData;
-  const loadingTask = pdfjsLib.getDocument(source);
+  const loadingTask = pdfjs.getDocument(source);
   const pdf = await loadingTask.promise;
 
   // Initialize jsPDF
@@ -487,7 +503,7 @@ export async function exportStudyPackPDF(
 
     if (context) {
       await page.render({ canvasContext: context, viewport: renderViewport } as any).promise;
-      drawAnnotationsOnCanvas(context, canvas.width, canvas.height, annotations[pageIdx] || []);
+      await drawAnnotationsOnCanvas(context, canvas.width, canvas.height, annotations[pageIdx] || []);
       const imgData = canvas.toDataURL('image/jpeg', 0.90);
 
       // Add slide page with EXACT native dimensions
@@ -529,4 +545,42 @@ export async function exportStudyPackPDF(
   if (onProgress) onProgress('Saving Study Pack PDF...');
   const safeFileName = documentTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
   doc.save(`${safeFileName}_Study_Pack.pdf`);
+}
+
+/** Export a notebook as dynamically sized note pages without a placeholder document. */
+export async function exportNotesOnlyPDF(
+  documentTitle: string,
+  notes: Record<number, PageNote>,
+  totalPages: number,
+  onProgress?: (progressText: string) => void
+) {
+  const doc = new jsPDF({ unit: 'mm', orientation: 'p' });
+  let renderedPages = 0;
+
+  for (let pageNumber = 1; pageNumber <= Math.max(1, totalPages); pageNumber++) {
+    const pageNote = notes[pageNumber];
+    if (!hasNoteContent(pageNote)) continue;
+    if (onProgress) onProgress(`Formatting notebook page ${pageNumber}...`);
+    const blocks: NoteBlock[] = pageNote.blocks?.length
+      ? pageNote.blocks
+      : pageNote.content?.trim()
+        ? [{ id: `notebook-${pageNumber}`, content: pageNote.content, createdAt: Date.now(), isAiGenerated: false }]
+        : [];
+    renderDynamicNotes(doc, blocks, `Notebook Notes — Page ${pageNumber}`, documentTitle, `Notebook page ${pageNumber}`);
+    renderedPages += 1;
+  }
+
+  if (renderedPages === 0) {
+    renderDynamicNotes(doc, [{
+      id: 'empty-notebook',
+      content: 'This notebook does not contain any notes yet.',
+      createdAt: Date.now(),
+      isAiGenerated: false,
+    }], 'Notebook Notes', documentTitle, 'Notebook');
+  }
+
+  if (doc.getNumberOfPages() > 1) doc.deletePage(1);
+  if (onProgress) onProgress('Saving notebook PDF...');
+  const safeFileName = documentTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
+  doc.save(`${safeFileName}_Notes.pdf`);
 }

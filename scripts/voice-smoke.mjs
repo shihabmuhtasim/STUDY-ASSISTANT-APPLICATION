@@ -23,8 +23,10 @@ const bundle = await build({ absWorkingDir: root, bundle: true, write: false, fo
       return <><nav><button onClick={()=>setTab(tab==='voice'?'pdf':'voice')}>Switch tab</button><button onClick={()=>setPage(p=>p+1)}>Next page</button><button onClick={()=>setOpen(true)}>Voice controls</button></nav><main style={{height:'85vh'}}>{tab==='voice'?panel:<p>Document reader: {page}</p>}</main><VoiceNotesDialog open={open} onClose={()=>setOpen(false)}>{panel}</VoiceNotesDialog></>;
     }createRoot(document.getElementById('root')).render(<App/>);` },
   plugins: [{ name: 'mock-providers', setup(b) {
-    b.onResolve({ filter: /services\/customAI$|\.\/customAI$|services\/connectionStore$/ }, args => ({ path: args.path, namespace: 'fake' }));
-    b.onLoad({ filter: /.*/, namespace: 'fake' }, args => ({ contents: args.path.endsWith('customAI')
+    b.onResolve({ filter: /services\/ai$|services\/customAI$|\.\/customAI$|services\/connectionStore$/ }, args => ({ path: args.path, namespace: 'fake' }));
+    b.onLoad({ filter: /.*/, namespace: 'fake' }, args => ({ contents: args.path.endsWith('/ai')
+      ? `export async function askAIAboutPage(input){window.calls.push(input);return {response:'Hosted lecture notes',provider:'gemini',model:'gemini-flash'}}`
+      : args.path.endsWith('customAI')
       ? `export async function askCustomAI(input){window.calls.push(input);await new Promise(r=>setTimeout(r,50));if(window.fail)throw Error('Provider unavailable; transcript retained');return {response:'## Lecture notes\\n'+input.pageText+' explained.',model:'test'}} export async function testCustomAIConnection(){}`
       : `export async function loadSavedConnections(){return [{id:'test-key',name:'My lecture API',isStored:true,service:'custom',model:'test',apiKey:''}]} export async function saveEncryptedConnection(c){return c} export async function deleteEncryptedConnection(){}` }));
   } }], define: { 'process.env.NODE_ENV': '"development"' }, logLevel: 'silent' });
@@ -37,6 +39,8 @@ try {
   browser=await chromium.launch({headless:true,channel:'chrome'});const page=await browser.newPage({viewport:{width:1100,height:800}});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.voice?.ready && window.voice.selectedId);
+  await page.waitForFunction(()=>window.voice.connections.length > 0);
+  await page.getByRole('combobox',{name:'Recording model'}).selectOption('test-key');
   const speak=async text=>page.evaluate(text=>window.engines.at(-1).onresult({results:[{isFinal:true,0:{transcript:text}}]}),text);
   await page.getByRole('button',{name:'This page',exact:true}).click();await speak('The lecturer explains page one.');
   await page.getByRole('button',{name:'Switch tab'}).click();assert.equal(await page.evaluate(()=>window.voice.session.phase),'recording');
@@ -52,6 +56,12 @@ try {
   await page.waitForFunction(()=>window.voice.jobs.every(j=>j.status==='saved'));
   assert.deepEqual(await page.evaluate(()=>window.calls.map(c=>c.pageNumber)),[1,2,3,3]);
   assert.ok(await page.evaluate(()=>window.calls.every(c=>c.connection.id==='test-key')));
+  await page.getByRole('combobox',{name:'Recording model'}).selectOption('builtin');
+  await page.getByRole('button',{name:'This page',exact:true}).click();await speak('Hosted lecture test');
+  await page.getByRole('button',{name:'Stop and create notes',exact:true}).click();
+  await page.waitForFunction(()=>window.voice.jobs.length===4 && window.voice.jobs.every(j=>j.status==='saved'));
+  assert.equal(await page.evaluate(()=>window.calls.at(-1).purpose),'voice-notes');
+  assert.equal(await page.evaluate(()=>window.calls.at(-1).modelPreference),'gemini-flash');
   await page.getByRole('button',{name:'Voice controls',exact:true}).click();await page.getByRole('dialog').waitFor();
   await page.screenshot({path:'/private/tmp/voice-notes-desktop.png'});
   await page.setViewportSize({width:390,height:844});await page.evaluate(()=>document.documentElement.dataset.theme='dark');

@@ -1,5 +1,6 @@
 export interface StudyDocument {
   id: string;
+  kind?: 'document' | 'notebook';
   title: string;
   fileData: string | Blob; // Legacy data URL or locally stored PDF Blob
   sourceFormat?: string;
@@ -21,6 +22,17 @@ export interface StudyFolder {
   createdAt: number;
 }
 
+export interface DrawingTextBox {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
+  fontSize: number;
+  color: string;
+}
+
 export interface NoteBlock {
   id: string;
   question?: string;
@@ -28,6 +40,7 @@ export interface NoteBlock {
   createdAt: number;
   isAiGenerated?: boolean;
   source?: 'voice';
+  drawing?: { dataUrl: string; width: number; height: number; size: number; baseDataUrl?: string; textBoxes?: DrawingTextBox[] };
 }
 
 export interface InkAnnotation {
@@ -50,7 +63,17 @@ export interface TextAnnotation {
   text: string;
 }
 
-export type AnnotationStroke = InkAnnotation | TextAnnotation;
+export interface ImageAnnotation {
+  id: string;
+  tool: 'image';
+  dataUrl: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export type AnnotationStroke = InkAnnotation | TextAnnotation | ImageAnnotation;
 export type AnnotationTool = 'pen' | 'highlight' | 'eraser' | 'text';
 
 export interface PageNote {

@@ -3,6 +3,8 @@ import { BookOpenCheck, CheckCircle2, ChevronRight, Cloud, CloudOff, FileText, F
 import { v4 as uuidv4 } from 'uuid';
 import { AccountIdentity, AccountSummary, StudyDocument, StudyFolder } from '../types';
 import { DOCUMENT_ACCEPT, prepareStudyFile } from '../utils/documentImport';
+import jsPDF from 'jspdf';
+import { QuickTasks } from './QuickTasks';
 
 interface LibraryProps {
   documents: StudyDocument[];
@@ -58,10 +60,6 @@ export function Library({ documents, folders, onOpenDocument, onAddDocument, onD
 
   const processFile = async (file: File) => {
     if (isImporting) return;
-    if (!account) {
-      onRequireAuth();
-      return;
-    }
     setError(null);
     setIsImporting(true);
     try {
@@ -85,6 +83,26 @@ export function Library({ documents, folders, onOpenDocument, onAddDocument, onD
     } finally {
       setIsImporting(false);
     }
+  };
+
+  const createNotebook = async () => {
+    if (isImporting) return;
+    const title = window.prompt('Notebook name', 'Untitled notebook')?.trim();
+    if (!title) return;
+    setIsImporting(true);
+    setError(null);
+    try {
+      const blankPdf = new jsPDF({ unit: 'mm', format: 'a4' });
+      const now = Date.now();
+      const saved = await onAddDocument({
+        id: uuidv4(), title, kind: 'notebook', fileData: blankPdf.output('blob'),
+        sourceFormat: 'Notebook', originalFileName: `${title}.pdf`, totalPages: 1,
+        createdAt: now, updatedAt: now,
+      });
+      onOpenDocument(saved);
+    } catch (notebookError) {
+      setError(notebookError instanceof Error ? notebookError.message : 'The notebook could not be created.');
+    } finally { setIsImporting(false); }
   };
 
   const commitRename = (document: StudyDocument) => {
@@ -181,6 +199,8 @@ export function Library({ documents, folders, onOpenDocument, onAddDocument, onD
 
         {cloudMessage && <p role="status" className="mb-5 rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">{cloudMessage}</p>}
 
+        {account && <QuickTasks key={account.userId} userId={account.userId} />}
+
         {error && (
           <div role="alert" className="mb-5 flex items-center justify-between gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
             <span>{error}</span>
@@ -197,10 +217,13 @@ export function Library({ documents, folders, onOpenDocument, onAddDocument, onD
           <span className="mx-auto grid h-12 w-12 place-items-center rounded-lg bg-[#171717] text-white"><Upload size={22} /></span>
           <h2 className="mt-3 text-lg font-semibold text-[#171717]">Bring in your next document</h2>
           <p className="mt-1 text-sm text-slate-500">Drop it here or browse PDF, Word, text, Markdown, HTML, RTF, and CSV files.</p>
-          <button type="button" disabled={isImporting} onClick={() => !account ? onRequireAuth() : fileInputRef.current?.click()} className="mt-5 inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 text-sm disabled:opacity-60">
-            {isImporting && <Loader2 size={15} className="animate-spin" />}
-            {isImporting ? 'Preparing document…' : !account ? 'Sign in to add a document' : 'Select document'}
-          </button>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <button type="button" disabled={isImporting} onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 text-sm disabled:opacity-60">
+              {isImporting && <Loader2 size={15} className="animate-spin" />}
+              {isImporting ? 'Preparing…' : 'Select document'}
+            </button>
+            <button type="button" disabled={isImporting} onClick={createNotebook} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-60"><NotebookPen size={16} />Blank notebook</button>
+          </div>
           <input
             type="file"
             ref={fileInputRef}
@@ -237,7 +260,7 @@ export function Library({ documents, folders, onOpenDocument, onAddDocument, onD
                 <button type="submit" className="rounded bg-indigo-600 px-2 py-1 text-xs font-semibold text-white">Create</button>
                 <button type="button" onClick={() => { setCreatingFolder(false); setNewFolderName(''); }} className="p-1 text-slate-400" aria-label="Cancel folder creation"><X size={14} /></button>
               </form>
-            ) : <button type="button" onClick={() => account ? setCreatingFolder(true) : onRequireAuth()} className="flex shrink-0 items-center gap-2 rounded-md border border-dashed border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-700"><FolderPlus size={14} />New folder</button>}
+            ) : <button type="button" onClick={() => setCreatingFolder(true)} className="flex shrink-0 items-center gap-2 rounded-md border border-dashed border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-700"><FolderPlus size={14} />New folder</button>}
           </div>
 
           {documents.length === 0 ? (

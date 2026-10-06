@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { NoteBlock, PageNote } from '../types';
 import { RichTextEditor, richTextToPlainText, toRichTextHtml } from './RichTextEditor';
 import { useSpeechTranscription } from '../hooks/useSpeechTranscription';
+import { DrawingStudio } from './DrawingStudio';
+import { Pencil } from 'lucide-react';
 
 interface NotesPanelProps {
   note: PageNote;
@@ -27,6 +29,8 @@ export function NotesPanel({ note, title, defaultHeading = '', onDefaultHeadingC
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [headingSettingsOpen, setHeadingSettingsOpen] = useState(false);
   const [headingDraft, setHeadingDraft] = useState(defaultHeading);
+  const [drawingId, setDrawingId] = useState<string | null>(null);
+  const dictationBase = useRef('');
 
   // Speech to text dictation for new note cards
   const {
@@ -37,15 +41,15 @@ export function NotesPanel({ note, title, defaultHeading = '', onDefaultHeadingC
   } = useSpeechTranscription({
     onTranscript: (spokenText) => {
       if (!spokenText.trim()) return;
-      setNewContent((prev) => {
-        const cleanPrev = prev.trim();
-        if (!cleanPrev || cleanPrev === '<p></p>' || cleanPrev === '<p><br></p>') {
-          return `<p>${spokenText}</p>`;
-        }
-        return `${cleanPrev} <p>${spokenText}</p>`;
-      });
+      const base = dictationBase.current.trim();
+      setNewContent(`${base}${base ? '<p><br></p>' : ''}<p>${toRichTextHtml(spokenText)}</p>`);
     },
   });
+
+  const toggleNoteDictation = () => {
+    if (!isListening) dictationBase.current = newContent;
+    toggleListening();
+  };
 
   const [filterMode, setFilterMode] = useState<'notes' | 'voice'>('notes');
 
@@ -121,6 +125,7 @@ export function NotesPanel({ note, title, defaultHeading = '', onDefaultHeadingC
   };
 
   const startEdit = (block: NoteBlock) => {
+    if (block.drawing) { setDrawingId(block.id); return; }
     setEditingId(block.id);
     setEditTitle(block.question || '');
     setEditContent(toRichTextHtml(block.content));
@@ -147,6 +152,12 @@ export function NotesPanel({ note, title, defaultHeading = '', onDefaultHeadingC
     setAdding(true);
   };
 
+  useEffect(() => {
+    const flush = () => { addBlock(); draftRef.current = { ...draftRef.current, newContent: '', newTitle: '' }; };
+    window.addEventListener('study-flush-notes', flush);
+    return () => window.removeEventListener('study-flush-notes', flush);
+  });
+
   return (
     <div className="notes-panel flex h-full flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xs">
       <div className="flex shrink-0 flex-col gap-2 border-b border-slate-200 bg-slate-50 p-3">
@@ -157,6 +168,7 @@ export function NotesPanel({ note, title, defaultHeading = '', onDefaultHeadingC
             <span className="text-xs text-slate-400">{allBlocks.length}</span>
           </div>
           <div className="flex items-center gap-1">
+            <button type="button" onClick={() => setDrawingId('new')} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1.5 text-xs" title="Draw a diagram and add it to notes"><Pencil size={14} />Draw</button>
             <button type="button" onClick={() => setHeadingSettingsOpen((value) => !value)} className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-emerald-600" title="Set a default heading for new note cards" aria-expanded={headingSettingsOpen}><Settings2 size={16} /></button>
             <button type="button" onClick={onClear} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" title={`Clear ${title ? 'whole-document' : 'page'} notes`}><Trash2 size={16} /></button>
             <button type="button" onClick={onSave} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"><Save size={14} /> Save</button>
@@ -217,7 +229,10 @@ export function NotesPanel({ note, title, defaultHeading = '', onDefaultHeadingC
                     </div>
                   </div>
                   {block.question && <h4 className="mb-2 border-b border-slate-100 pb-2 text-sm font-semibold text-slate-900">{block.question}</h4>}
-                  <div className="rich-note-content text-sm leading-relaxed text-slate-800" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(toRichTextHtml(block.content)) }} />
+                  {block.drawing ? <div>
+                    <button type="button" onClick={() => setDrawingId(block.id)} className="block max-w-full" style={{ width: `${block.drawing.size}%` }} title="Open drawing"><img src={block.drawing.dataUrl} alt={block.question || 'Drawing'} className="h-auto w-full rounded border border-slate-200 bg-white" /></button>
+                    <label className="mt-2 flex items-center gap-2 text-xs text-slate-500">Drawing width<input type="range" aria-label="Drawing width" min="25" max="100" step="5" value={block.drawing.size} onChange={e => saveBlocks(blocks.map(item => item.id === block.id ? { ...item, drawing: { ...block.drawing!, size: +e.target.value } } : item))} />{block.drawing.size}%</label>
+                  </div> : <div className="rich-note-content text-sm leading-relaxed text-slate-800" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(toRichTextHtml(block.content)) }} />}
                 </>
               )}
             </article>
@@ -231,7 +246,7 @@ export function NotesPanel({ note, title, defaultHeading = '', onDefaultHeadingC
                   {isSpeechSupported && (
                     <button
                       type="button"
-                      onClick={toggleListening}
+                      onClick={toggleNoteDictation}
                       className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition-colors ${
                         isListening
                           ? 'bg-red-100 text-red-700 animate-pulse border border-red-300'
@@ -266,6 +281,11 @@ export function NotesPanel({ note, title, defaultHeading = '', onDefaultHeadingC
           )}
         </div>
       </div>
+      {drawingId && <DrawingStudio initial={blocks.find(block => block.id === drawingId)?.drawing} onClose={() => setDrawingId(null)} onSave={drawing => {
+        const existing = blocks.find(block => block.id === drawingId);
+        saveBlocks(existing ? blocks.map(block => block.id === drawingId ? { ...block, drawing } : block) : [...blocks, { id: uuidv4(), question: 'Drawing', content: '', drawing, createdAt: Date.now() }]);
+        setDrawingId(null);
+      }} />}
     </div>
   );
 }

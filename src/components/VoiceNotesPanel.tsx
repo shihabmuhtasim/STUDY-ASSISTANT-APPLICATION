@@ -22,9 +22,9 @@ export function VoiceNotesPanel({ voice, pageNumber, notes, onManage, onOpenPage
       <button type="button" onClick={onManage} title="Manage your Custom API connections" className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-2 text-xs font-medium"><KeyRound size={14} />Custom API</button>
     </header>
     <div className="space-y-4 border-b border-slate-200 p-5">
-      <label className="block text-xs font-medium text-slate-600">Recording model
+      <label className="block text-xs font-medium text-slate-600">Notes model
         <select aria-label="Recording model" disabled={active} value={voice.selectedId || ''} onChange={(event) => voice.select(event.target.value)} className="mt-1.5 h-10 w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 text-sm">
-          <option value="" disabled>Add a Custom API connection</option>
+          <option value="builtin">Hosted Gemini (automatic fallback)</option>
           {voice.connections.map((connection) => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
         </select>
       </label>

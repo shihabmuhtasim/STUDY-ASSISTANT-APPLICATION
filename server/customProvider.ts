@@ -28,6 +28,7 @@ export interface CustomProviderInput {
   scope?: 'page' | 'document';
   referencesEnabled?: boolean;
   pageImage?: string;
+  attachmentImages?: string[];
   history: AIInteraction[];
   testMode?: boolean;
 }
@@ -82,8 +83,10 @@ function safeEndpoint(baseUrl: string) {
 
 async function openAICompatible(input: CustomProviderInput, promptContext: string) {
   const canUseImage = input.connection.service !== 'nvidia' || /(vision|multimodal|omni|muse-glimmer|\bvl\b)/i.test(input.connection.model);
-  const userContent: string | Array<Record<string, unknown>> = input.pageImage && canUseImage
-    ? [{ type: 'text', text: promptContext }, { type: 'image_url', image_url: { url: input.pageImage } }]
+  const images = [...(input.pageImage ? [input.pageImage] : []), ...(input.attachmentImages || [])];
+  if (images.length && !canUseImage) throw new Error('This model does not support images. Choose a vision model or enable auto fallback.');
+  const userContent: string | Array<Record<string, unknown>> = images.length
+    ? [{ type: 'text', text: promptContext }, ...images.map(url => ({ type: 'image_url', image_url: { url } }))]
     : promptContext;
   const response = await providerFetch(safeEndpoint(input.connection.baseUrl || ''), {
     method: 'POST',
@@ -184,9 +187,9 @@ async function nvidia(input: CustomProviderInput, promptContext: string) {
 
 async function gemini(input: CustomProviderInput, promptContext: string) {
   const parts: Array<Record<string, unknown>> = [{ text: `${SYSTEM_PROMPT}\n\n${promptContext}` }];
-  if (input.pageImage) {
-    const [metadata, data] = input.pageImage.split(',');
-    parts.unshift({ inlineData: { mimeType: metadata?.match(/data:(.*?);base64/)?.[1] || 'image/jpeg', data: data || input.pageImage } });
+  for (const image of [...(input.pageImage ? [input.pageImage] : []), ...(input.attachmentImages || [])]) {
+    const [metadata, data] = image.split(',');
+    parts.push({ inlineData: { mimeType: metadata?.match(/data:(.*?);base64/)?.[1] || 'image/jpeg', data } });
   }
   const response = await providerFetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(input.connection.model)}:generateContent`, {
     method: 'POST',
@@ -202,9 +205,9 @@ async function gemini(input: CustomProviderInput, promptContext: string) {
 
 async function anthropic(input: CustomProviderInput, promptContext: string) {
   const content: Array<Record<string, unknown>> = [{ type: 'text', text: promptContext }];
-  if (input.pageImage) {
-    const [metadata, data] = input.pageImage.split(',');
-    content.unshift({ type: 'image', source: { type: 'base64', media_type: metadata?.match(/data:(.*?);base64/)?.[1] || 'image/jpeg', data: data || input.pageImage } });
+  for (const image of [...(input.pageImage ? [input.pageImage] : []), ...(input.attachmentImages || [])]) {
+    const [metadata, data] = image.split(',');
+    content.push({ type: 'image', source: { type: 'base64', media_type: metadata?.match(/data:(.*?);base64/)?.[1] || 'image/jpeg', data } });
   }
   const response = await providerFetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',

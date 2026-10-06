@@ -21,7 +21,7 @@ export function useVoiceNotes(options: {
   const [ready, setReady] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [connections, setConnections] = useState<CustomAIConnection[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>('builtin');
   const controller = useRef<VoiceSession | null>(null);
   const latest = useRef({ options, connections, selectedId });
   latest.current = { options, connections, selectedId };
@@ -57,12 +57,13 @@ export function useVoiceNotes(options: {
               prompt: lecturePrompt(chunks[part]),
               pageNumber: job.pageNumber, pageText: job.pageText, documentContext: `[Page ${job.pageNumber}]\n${job.pageText}`,
               scope: 'page', referencesEnabled: false, history: [],
-              modelPreference: 'auto', allowFallback: true
+              modelPreference: 'gemini-flash', allowFallback: true, purpose: 'voice-notes'
             }))
           : await askCustomAI({ connection: connection!, prompt: lecturePrompt(chunks[part]),
               pageNumber: job.pageNumber, pageText: job.pageText, documentContext: `[Page ${job.pageNumber}]\n${job.pageText}`,
               scope: 'page', referencesEnabled: false, history: [] });
         if (run !== generation.current) return;
+        if (result.provider === 'local') throw new Error('Hosted AI is temporarily unavailable. Select another model and retry. Your transcript is kept.');
         job = { ...job, parts: [...job.parts, result.response] };
         await update(job);
       }

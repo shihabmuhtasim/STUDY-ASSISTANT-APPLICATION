@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Paperclip, X } from 'lucide-react';
+import { prepareChatAttachment, type ChatAttachment } from '../utils/chatAttachments';
 import { Bot, Check, ChevronDown, Copy, Crown, HelpCircle, Image as ImageIcon, KeyRound, ListFilter, Loader2, Lock, Mic, MicOff, Plus, Quote, Radio, Send, Sparkles, Square } from 'lucide-react';
 import { AccountIdentity, AccountSummary, AIInteraction, AIModelPreference, AISourceReference, CustomAIConnection } from '../types';
 import { AIRequestError, askAIAboutPage } from '../services/ai';
@@ -21,6 +23,7 @@ interface AIAssistantProps {
   documentPages?: string[];
   isDocumentContextLoading: boolean;
   documentContextProgress?: string | null;
+  allowEmptyContext?: boolean;
   scope?: 'page' | 'document';
   history: AIInteraction[];
   account: AccountSummary | AccountIdentity | null;
@@ -109,6 +112,7 @@ export function AIAssistant({
   documentPages = [],
   isDocumentContextLoading,
   documentContextProgress,
+  allowEmptyContext = false,
   scope = 'page',
   history,
   account,
@@ -126,7 +130,10 @@ export function AIAssistant({
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [includeImage, setIncludeImage] = useState(false);
+  const [includeImage, setIncludeImage] = useState(true);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [attaching, setAttaching] = useState(false);
+  const attachmentInput = useRef<HTMLInputElement>(null);
   const [modelPreference, setModelPreference] = useState<AIModelPreference>('auto');
   const [allowFallback, setAllowFallback] = useState(true);
   const [referencesEnabled, setReferencesEnabled] = useState(false);
@@ -144,7 +151,8 @@ export function AIAssistant({
   const modelMenuRef = useRef<HTMLDivElement>(null);
   const [modelMenuMaxHeight, setModelMenuMaxHeight] = useState(288);
   const [insertModalState, setInsertModalState] = useState({ isOpen: false, promptQuestion: '', aiResponse: '' });
-  const hasProAccess = Boolean(account && 'plan' in account && account.plan === 'pro');
+  // Temporarily unlocked: all premium features are open to everyone
+  const hasProAccess = true; // eslint-disable-line @typescript-eslint/no-unused-vars
   const remainingPercent = account && 'aiRemainingPercent' in account ? account.aiRemainingPercent : 0;
   const maxPage = Math.max(1, documentPages.length);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -250,9 +258,9 @@ export function AIAssistant({
   }, [modelPreference, allowFallback, referencesEnabled, selectedConnectionId, preferencesLoaded, account?.userId, hasProAccess]);
 
   useEffect(() => {
-    setIncludeImage(scope === 'page' && hasProAccess && !pageText.trim());
+    setIncludeImage(scope === 'page' && hasProAccess);
     setError(null);
-  }, [pageNumber, pageText, hasProAccess, scope]);
+  }, [pageNumber, hasProAccess, scope]);
 
   useEffect(() => {
     if (!modelMenuOpen) return;
@@ -279,12 +287,13 @@ export function AIAssistant({
   }, [modelMenuOpen]);
 
   const handleAsk = async (text: string) => {
-    if (!text.trim() || isLoading || isDocumentContextLoading) return;
-    if (scope === 'page' && !pageText.trim() && !pageImage) {
+    if (!text.trim() || isLoading || isDocumentContextLoading || attaching) return;
+    if (scope === 'page' && includeImage && !pageImage && !allowEmptyContext) { setError('The page image is still loading. Wait a moment before sending.'); return; }
+    if (!allowEmptyContext && scope === 'page' && !pageText.trim() && !pageImage) {
       setError('The page is still being prepared. Try again in a moment.');
       return;
     }
-    if (scope === 'document' && !documentContext.trim()) {
+    if (!allowEmptyContext && scope === 'document' && !documentContext.trim()) {
       setError('The whole document is still being prepared. Try again in a moment.');
       return;
     }
@@ -309,7 +318,8 @@ export function AIAssistant({
         prompt: text.trim(),
         pageNumber,
         pageText,
-        documentContext: contextBundle.context || documentContext.slice(0, scope === 'document' ? 20_000 : 14_000),
+        documentContext: (attachments.length ? `Attached files (images follow in this order after the current page image, if included): ${attachments.map(a => `${a.name}: ${a.images.length} page(s)/image(s)`).join('; ')}. Read the attached visuals, including graphs, not only extracted text.\n\n` : '') + (contextBundle.context || documentContext.slice(0, scope === 'document' ? 20_000 : 14_000)),
+        attachmentImages: attachments.flatMap(a => a.images),
         pageImage: scope === 'page' && includeImage ? pageImage || undefined : undefined,
         history,
         scope,
@@ -331,10 +341,11 @@ export function AIAssistant({
       }
       if (typeof result.remaining === 'number') onRemainingChange(result.remaining, result.remainingPercent);
       const cleanedResponse = normalizeModelResponse(result.response);
+      setAttachments([]);
       const usedReferences = referencesEnabled ? referencesUsedInAnswer(cleanedResponse, contextBundle.references) : [];
       onAddInteraction({
         id: uuidv4(),
-        prompt: text.trim(),
+        prompt: text.trim() + (attachments.length ? `\n[Attached: ${attachments.map(a => a.name).join(', ')}]` : ''),
         response: cleanedResponse,
         createdAt: Date.now(),
         insertedIntoNotes: false,
@@ -511,15 +522,36 @@ export function AIAssistant({
           </div>
           {hasProAccess ? <div className="flex items-center gap-3"><span className="text-xs font-semibold text-indigo-700">{remainingPercent}% left</span><label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer"><input type="checkbox" checked={allowFallback} onChange={(event) => setAllowFallback(event.target.checked)} className="accent-indigo-600" />Auto fallback</label></div> : <button type="button" onClick={onUpgrade} className="inline-flex items-center gap-1.5 rounded-md bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"><Lock size={12} />{remainingPercent}% AI usage left · Upgrade</button>}
         </div>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <button type="button" disabled={attaching || isLoading} onClick={() => hasProAccess ? attachmentInput.current?.click() : onUpgrade()} className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 disabled:opacity-40" title="Attach images or PDFs: six pages/images total, 20 MB per file"><Paperclip size={14} />{attaching ? 'Preparing...' : 'Attach'}{!hasProAccess && <Lock size={12} />}</button>
+          <input ref={attachmentInput} type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp" aria-label="Attach images or PDFs" className="sr-only" disabled={attaching || isLoading} onChange={async event => {
+            const files = Array.from(event.target.files || []); event.target.value = ''; if (!files.length) return;
+            setAttaching(true); setError(null);
+            try {
+              if (files.length > 6) throw new Error('Attach up to six images or PDF pages per message.');
+              const next = [...attachments];
+              for (const file of files) { const prepared = await prepareChatAttachment(file); next.push(prepared); if (next.reduce((sum, a) => sum + a.images.length, 0) > 6) throw new Error('Attach up to six images or PDF pages per message.'); }
+              setAttachments(next);
+            } catch (error) { setError(error instanceof Error ? error.message : 'Could not prepare this attachment.'); }
+            finally { setAttaching(false); }
+          }} />
+          {attachments.map(attachment => <span key={attachment.id} className="inline-flex max-w-full items-center gap-1 rounded border border-slate-200 px-2 py-1 text-xs"><span className="truncate">{attachment.name} ({attachment.images.length})</span><button type="button" disabled={isLoading || attaching} title={`Remove ${attachment.name}`} onClick={() => setAttachments(items => items.filter(item => item.id !== attachment.id))}><X size={13} /></button></span>)}
+        </div>
         <form onSubmit={(event) => { event.preventDefault(); handleAsk(prompt); }} className="relative flex items-center">
-          <input
-            type="text"
+          <textarea
+            rows={1}
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                if (prompt.trim() && !isLoading && !isDocumentContextLoading) handleAsk(prompt);
+              }
+            }}
             placeholder={isDocumentContextLoading ? 'Preparing document context…' : scope === 'document' ? 'Ask anything about the whole document…' : 'Ask about this page or the whole document…'}
             disabled={isLoading || isDocumentContextLoading}
             maxLength={4000}
-            className={`w-full pl-4 ${isSpeechSupported ? 'pr-20' : 'pr-11'} py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs sm:text-sm focus:border-indigo-500 disabled:opacity-60`}
+            className={`max-h-28 min-h-10 w-full resize-none pl-4 ${isSpeechSupported ? 'pr-20' : 'pr-11'} py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs sm:text-sm focus:border-indigo-500 disabled:opacity-60`}
           />
           {isSpeechSupported && (
             <button

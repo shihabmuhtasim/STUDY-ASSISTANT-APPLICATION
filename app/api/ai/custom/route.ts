@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { visualImages } from '../../../../server/visualInput';
 import type { AIInteraction, CustomAIConnection } from '../../../../src/types';
 import { verifyFirebaseRequest } from '../../../../server/firebaseUser';
 import { connectionWithDecryptedKey } from '../../../../server/userConnections';
@@ -16,6 +17,7 @@ interface RequestBody {
   scope?: 'page' | 'document';
   referencesEnabled?: boolean;
   pageImage?: string;
+  attachmentImages?: string[];
   history?: AIInteraction[];
   testMode?: boolean;
 }
@@ -28,6 +30,7 @@ export async function POST(request: Request) {
   if (body.pageImage && body.pageImage.length > 4_000_000) return NextResponse.json({ error: 'The page image is too large.' }, { status: 413 });
 
   let connection: CustomAIConnection | null = null;
+  try { visualImages(body); } catch (error) { return NextResponse.json({ error: (error as Error).message }, { status: 400 }); }
   if (body.connectionId) connection = await connectionWithDecryptedKey(user, body.connectionId);
   else if (body.transientConnection?.apiKey) connection = body.transientConnection;
   if (!connection) return NextResponse.json({ error: 'The selected AI connection was not found.' }, { status: 404 });
@@ -42,6 +45,7 @@ export async function POST(request: Request) {
       scope: body.scope === 'document' ? 'document' : 'page',
       referencesEnabled: body.referencesEnabled === true,
       pageImage: body.pageImage,
+      attachmentImages: body.attachmentImages,
       history: body.history?.slice(-3) || [],
       testMode: body.testMode === true,
     });

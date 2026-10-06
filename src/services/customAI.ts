@@ -11,6 +11,7 @@ interface CustomAIInput {
   scope?: 'page' | 'document';
   referencesEnabled?: boolean;
   pageImage?: string;
+  attachmentImages?: string[];
   history: AIInteraction[];
   testMode?: boolean;
   signal?: AbortSignal;
@@ -39,7 +40,21 @@ async function authenticatedRequest(path: string, init: RequestInit, timeoutMs =
         ...init.headers,
       },
     });
-    data = await response.json();
+    const body = await response.text();
+    if (!body.trim()) {
+      throw new AIRequestError(
+        response.ok
+          ? 'The provider returned an empty response. Try another model.'
+          : `The provider connection failed (${response.status}). Try another model.`,
+        `CUSTOM_${response.status || 'EMPTY'}`,
+        response.status,
+      );
+    }
+    try {
+      data = JSON.parse(body) as typeof data;
+    } catch {
+      throw new AIRequestError('The provider returned an invalid response. Try another model.', 'CUSTOM_INVALID_RESPONSE', response.status);
+    }
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       if (externalSignal?.aborted) throw new AIRequestError('Generation stopped.', 'ABORTED', 499);
@@ -65,6 +80,7 @@ export async function askCustomAI(input: CustomAIInput) {
       scope: input.scope || 'page',
       referencesEnabled: input.referencesEnabled === true,
       pageImage: input.pageImage,
+      attachmentImages: input.attachmentImages,
       history: input.history.slice(-2).map((item) => ({ ...item, prompt: item.prompt.slice(0, 700), response: item.response.slice(0, 1_800) })),
       testMode: input.testMode === true,
     }),

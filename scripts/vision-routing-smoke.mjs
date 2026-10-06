@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+const bundle = await build({entryPoints:['server/aiRouter.ts'],bundle:true,write:false,platform:'node',format:'esm',plugins:[{name:'test-environment',setup(b){
+  b.onResolve({filter:/^cloudflare:workers$|\.\/modelControls$/},args=>({path:args.path,namespace:'mock'}));
+  b.onLoad({filter:/.*/,namespace:'mock'},args=>({contents:args.path==='cloudflare:workers'?'export const env=globalThis.testEnv':'export async function getAIControlState(){return {paused:false,disabledModels:new Set()}}'}));
+}}]});
+const calls=[];globalThis.testEnv={AI:{run:async(model,payload)=>{calls.push({model,payload});return {response:'Graph explanation'}}}};
+const {routeAIRequest}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+const image='data:image/jpeg;base64,YQ==';
+const request={prompt:'Explain the graph',pageNumber:8,pageText:'Growth of machine learning models',pageImage:image,attachmentImages:[image],modelPreference:'qwen',allowFallback:true};
+const result=await routeAIRequest(request);
+assert.ok(!calls.some(c=>c.model.includes('qwen')));
+assert.equal(calls[0].payload.messages[1].content.filter(p=>p.type==='image_url').length,2);
+assert.equal(result.fallbackUsed,true);
+await assert.rejects(()=>routeAIRequest({...request,allowFallback:false}),/VISION_MODEL_REQUIRED/);
+globalThis.testEnv.AI.run=async()=>{throw new Error('offline')};
+const originalError=console.error;
+console.error=()=>{};
+await assert.rejects(()=>routeAIRequest(request),/VISION_UNAVAILABLE/);
+globalThis.testEnv.GEMINI_API_KEY='test-key';
+const originalFetch=globalThis.fetch;
+globalThis.fetch=async()=>new Response('{}',{status:401});
+await assert.rejects(()=>routeAIRequest({...request,modelPreference:'gemini-flash',allowFallback:false}),/GEMINI_401/);
+globalThis.fetch=originalFetch;
+console.error=originalError;
+await assert.rejects(()=>routeAIRequest({...request,attachmentImages:Array(7).fill(image)}),/six/);
+console.log('PASS: visual requests retain all images, skip text-only models, respect fallback settings, reject invalid attachments, and never return a text-only fallback.');

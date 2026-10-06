@@ -13,6 +13,7 @@ import type { AIModelPreference, AnnotationStroke, PageNote, StudyDocument, Stud
 
 export interface CloudDocumentMetadata {
   id: string;
+  kind?: StudyDocument['kind'];
   title: string;
   sourceFormat?: string;
   originalFileName?: string;
@@ -46,6 +47,7 @@ function clean<T>(value: T): T {
 function documentMetadata(document: StudyDocument): CloudDocumentMetadata {
   return clean({
     id: document.id,
+    kind: document.kind,
     title: document.title,
     sourceFormat: document.sourceFormat,
     originalFileName: document.originalFileName,
