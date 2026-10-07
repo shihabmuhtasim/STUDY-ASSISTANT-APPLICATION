@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Paperclip, X } from 'lucide-react';
+import { Paperclip, Settings2, X } from 'lucide-react';
+import { StarterPromptsEditor } from './StarterPromptsEditor';
 import { prepareChatAttachment, type ChatAttachment } from '../utils/chatAttachments';
 import { Bot, Check, ChevronDown, Copy, Crown, HelpCircle, Image as ImageIcon, KeyRound, ListFilter, Loader2, Lock, Mic, MicOff, Plus, Quote, Radio, Send, Sparkles, Square } from 'lucide-react';
 import { AccountIdentity, AccountSummary, AIInteraction, AIModelPreference, AISourceReference, CustomAIConnection } from '../types';
@@ -16,6 +17,8 @@ import { referencesUsedInAnswer } from '../utils/answerReferences';
 import { useSpeechTranscription } from '../hooks/useSpeechTranscription';
 
 interface AIAssistantProps {
+  starterPrompts?: string[];
+  onStarterPromptsChange?: (prompts: string[]) => void;
   pageNumber: number;
   pageImage: string | null;
   pageText: string;
@@ -105,6 +108,8 @@ function normalizeModelResponse(value: string) {
 }
 
 export function AIAssistant({
+  starterPrompts,
+  onStarterPromptsChange,
   pageNumber,
   pageImage,
   pageText,
@@ -126,6 +131,8 @@ export function AIAssistant({
   onReferenceSelect,
 }: AIAssistantProps) {
   const [prompt, setPrompt] = useState('');
+  const [starterEditorOpen, setStarterEditorOpen] = useState(false);
+  const quickPrompts = starterPrompts ?? (scope === 'document' ? documentQuickPrompts : pageQuickPrompts);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -418,6 +425,7 @@ export function AIAssistant({
         </div>
         <div className="flex items-center gap-1">
           <span className="mr-1 hidden whitespace-nowrap text-xs font-medium text-slate-500 xl:inline">Document-aware</span>
+          {onStarterPromptsChange && <button type="button" onClick={() => setStarterEditorOpen(true)} aria-label="Edit starter questions" title="Edit starter questions for all pages" className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white text-slate-500"><Settings2 size={15} /></button>}
           <button type="button" onClick={() => setIncludeImage((enabled) => !enabled)} disabled={!hasProAccess || !pageImage || scope === 'document'} className={`grid h-8 w-8 place-items-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${includeImage ? 'border-indigo-300 bg-indigo-100 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:text-indigo-700'}`} title={includeImage ? 'Page image is included' : 'Include the current page image'} aria-label="Include page image" aria-pressed={includeImage}><ImageIcon size={15} /></button>
           <button type="button" onClick={() => setReferencesEnabled((enabled) => !enabled)} className={`grid h-8 w-8 place-items-center rounded-md border transition-colors ${referencesEnabled ? 'border-indigo-300 bg-indigo-100 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:text-indigo-700'}`} title={referencesEnabled ? 'References are enabled' : 'Add clickable PDF references'} aria-label="References" aria-pressed={referencesEnabled}><Quote size={15} /></button>
           <div className="relative">
@@ -442,7 +450,7 @@ export function AIAssistant({
             <p className="mt-3 font-medium text-slate-700 text-sm">{scope === 'document' ? 'Ask about the whole document' : `Ask about page ${pageNumber}`}</p>
             <p className="text-xs text-slate-500 mt-1">{scope === 'document' ? 'Answers consider every indexed page and can be inserted into whole-document notes.' : "Answers are grounded in this page's text and optional page image."}</p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
-              {(scope === 'document' ? documentQuickPrompts : pageQuickPrompts).map((item) => (
+              {quickPrompts.map((item) => (
                 <button key={item} type="button" onClick={() => handleAsk(item)} disabled={isDocumentContextLoading} className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-700 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-40">{item}</button>
               ))}
             </div>
@@ -598,6 +606,7 @@ export function AIAssistant({
         aiResponse={insertModalState.aiResponse}
         onConfirmInsert={onInsertToNotes}
       />
+      {onStarterPromptsChange && <StarterPromptsEditor open={starterEditorOpen} prompts={quickPrompts} defaults={pageQuickPrompts} onSave={onStarterPromptsChange} onClose={() => setStarterEditorOpen(false)} />}
       <AIConnectionsModal
         isOpen={connectionsOpen}
         connections={connections}

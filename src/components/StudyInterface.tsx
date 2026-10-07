@@ -307,6 +307,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
 
   const voice = useVoiceNotes({
     userId: account?.userId, documentId: document.id, pageNumber,
+    instructions: document.voiceNotePrompt,
     pageText: effectiveDocumentPages[pageNumber - 1] || '',
     onSave: handleInsertRecordingNotes,
   });
@@ -384,6 +385,8 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   };
 
   const aiAssistantProps = {
+    starterPrompts: document.aiStarterPrompts,
+    onStarterPromptsChange: (aiStarterPrompts: string[]) => onUpdateDocument({ ...document, aiStarterPrompts, updatedAt: Date.now() }),
     pageNumber,
     pageImage: isNotebook ? null : pageImage,
     pageText: studyScope === 'document' ? '' : effectivePageText,
@@ -673,7 +676,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
               <AIAssistant {...aiAssistantProps} />
             </div>
 
-            {activeTab === 'voice' && <VoiceNotesPanel voice={voice} pageNumber={pageNumber} notes={voiceNotes} onManage={() => setVoiceConnectionsOpen(true)} onOpenPage={openVoicePage} />}
+            {activeTab === 'voice' && <VoiceNotesPanel voice={voice} pageNumber={pageNumber} notes={voiceNotes} instructions={document.voiceNotePrompt} onInstructionsChange={(voiceNotePrompt) => onUpdateDocument({ ...document, voiceNotePrompt, updatedAt: Date.now() })} onManage={() => setVoiceConnectionsOpen(true)} onOpenPage={openVoicePage} />}
 
           </div>
         ) : (
@@ -727,7 +730,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
         {voice.session.phase !== 'idle' && <button type="button" onClick={voice.stop} disabled={voice.session.phase === 'finishing'} className="rounded-md border border-slate-200 px-3 py-1 font-semibold text-red-700">Stop</button>}
       </div>}
       <VoiceNotesDialog open={voiceOpen} onClose={() => setVoiceOpen(false)}>
-        <VoiceNotesPanel voice={voice} pageNumber={pageNumber} notes={voiceNotes} onManage={() => { setVoiceOpen(false); setVoiceConnectionsOpen(true); }} onOpenPage={openVoicePage} />
+        <VoiceNotesPanel voice={voice} pageNumber={pageNumber} notes={voiceNotes} instructions={document.voiceNotePrompt} onInstructionsChange={(voiceNotePrompt) => onUpdateDocument({ ...document, voiceNotePrompt, updatedAt: Date.now() })} onManage={() => { setVoiceOpen(false); setVoiceConnectionsOpen(true); }} onOpenPage={openVoicePage} />
       </VoiceNotesDialog>
       <AIConnectionsModal isOpen={voiceConnectionsOpen} connections={voice.connections} selectedId={voice.selectedId} onSelect={voice.select}
         onSave={async (connection) => { await saveEncryptedConnection(connection); await voice.refreshConnections(); }}

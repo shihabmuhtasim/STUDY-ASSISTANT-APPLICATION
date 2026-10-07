@@ -10,6 +10,8 @@ export interface StudyDocument {
   fileSize?: number;
   cloudStatus?: 'local' | 'syncing' | 'synced' | 'error';
   defaultNoteHeading?: string;
+  voiceNotePrompt?: string;
+  aiStarterPrompts?: string[];
   folderId?: string;
   totalPages: number;
   createdAt: number;

@@ -21,6 +21,8 @@ export interface CloudDocumentMetadata {
   mimeType?: string;
   fileSize?: number;
   defaultNoteHeading?: string;
+  voiceNotePrompt?: string;
+  aiStarterPrompts?: string[];
   folderId?: string;
   totalPages: number;
   createdAt: number;
@@ -55,6 +57,8 @@ function documentMetadata(document: StudyDocument): CloudDocumentMetadata {
     mimeType: document.mimeType,
     fileSize: document.fileSize,
     defaultNoteHeading: document.defaultNoteHeading,
+    voiceNotePrompt: document.voiceNotePrompt,
+    aiStarterPrompts: document.aiStarterPrompts,
     folderId: document.folderId,
     totalPages: document.totalPages,
     createdAt: document.createdAt,

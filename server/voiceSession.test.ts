@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { VoiceSession, transcriptChunks, lecturePrompt } from '../src/services/voiceSession.ts';
+import { VoiceSession, transcriptChunks, lecturePrompt, voiceTranscriptIssue } from '../src/services/voiceSession.ts';
 import type { SpeechEngine, VoiceSegment, VoiceSessionState } from '../src/services/voiceSession.ts';
 
 class Microphone implements SpeechEngine {
@@ -62,4 +62,23 @@ test('Long lecture chunks retain all words and fit the custom prompt limit', () 
   const chunks = transcriptChunks(transcript);
   assert.equal(chunks.join(' '), transcript);
   for (const chunk of chunks) assert.ok(lecturePrompt(chunk).length < 24000);
+});
+
+test('Voice notes require five seconds and twenty meaningful characters', () => {
+  const transcript = 'An explanation of neural networks.';
+  assert.match(voiceTranscriptIssue({ transcript: '', durationMs: 6000 }), /20 transcribed/);
+  assert.match(voiceTranscriptIssue({ transcript: '... ! '.repeat(20), durationMs: 6000 }), /20 transcribed/);
+  assert.match(voiceTranscriptIssue({ transcript: 'Hi', durationMs: 6000 }), /20 transcribed/);
+  assert.match(voiceTranscriptIssue({ transcript, durationMs: 4999 }), /five seconds/);
+  assert.equal(voiceTranscriptIssue({ transcript, durationMs: 5000 }), null);
+  assert.equal(voiceTranscriptIssue({ transcript }), null);
+  assert.equal(voiceTranscriptIssue({ transcript: '神经网络通过训练数据学习复杂模式并帮助我们进行预测和分类。', durationMs: 5000 }), null);
+});
+
+test('Custom voice instructions replace defaults but preserve the source transcript', () => {
+  const prompt = lecturePrompt('A lecture example.', 'Explain in simple French with examples.');
+  assert.ok(prompt.startsWith('Explain in simple French with examples.'));
+  assert.match(prompt, /Lecture Transcript:\n"""\nA lecture example\./);
+  assert.doesNotMatch(prompt, /CONTENT:/);
+  assert.match(lecturePrompt('Example', ''), /beginner-friendly/);
 });

@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { DEFAULT_LECTURE_INSTRUCTIONS } from '../services/voiceSession';
 import DOMPurify from 'dompurify';
 import { CheckCircle2, FileText, KeyRound, Loader2, Mic, Radio, RotateCcw, Square, X } from 'lucide-react';
 import type { NoteBlock } from '../types';
@@ -11,9 +12,13 @@ interface Props {
   notes: { pageNumber: number; block: NoteBlock }[];
   onManage: () => void;
   onOpenPage: (page: number) => void;
+  instructions?: string;
+  onInstructionsChange?: (instructions: string) => void;
 }
 
-export function VoiceNotesPanel({ voice, pageNumber, notes, onManage, onOpenPage }: Props) {
+export function VoiceNotesPanel({ voice, pageNumber, notes, onManage, onOpenPage, instructions, onInstructionsChange }: Props) {
+  const [draft, setDraft] = useState(instructions || DEFAULT_LECTURE_INSTRUCTIONS);
+  useEffect(() => { setDraft(instructions || DEFAULT_LECTURE_INSTRUCTIONS); }, [instructions]);
   const active = voice.session.phase !== 'idle';
   const pending = voice.jobs.filter((job) => job.status !== 'saved');
   return <section className="h-full overflow-y-auto rounded-lg border border-slate-200 bg-white text-slate-800" aria-label="Voice notes workspace">
@@ -22,6 +27,11 @@ export function VoiceNotesPanel({ voice, pageNumber, notes, onManage, onOpenPage
       <button type="button" onClick={onManage} title="Manage your Custom API connections" className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-2 text-xs font-medium"><KeyRound size={14} />Custom API</button>
     </header>
     <div className="space-y-4 border-b border-slate-200 p-5">
+      {onInstructionsChange && <details className="text-sm">
+        <summary className="cursor-pointer font-medium">Voice-note instructions</summary>
+        <textarea aria-label="Voice-note instructions" rows={8} maxLength={4000} disabled={active} value={draft} onChange={(event) => setDraft(event.target.value)} className="mt-3 w-full resize-y rounded-md border border-slate-200 bg-white p-3 text-sm disabled:opacity-50" />
+        <div className="mt-2 flex flex-wrap gap-3"><button type="button" disabled={active} onClick={() => onInstructionsChange(draft.trim() || DEFAULT_LECTURE_INSTRUCTIONS)} className="rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">Save instructions</button><button type="button" disabled={active} onClick={() => { setDraft(DEFAULT_LECTURE_INSTRUCTIONS); onInstructionsChange(DEFAULT_LECTURE_INSTRUCTIONS); }} className="inline-flex items-center gap-1.5 text-xs disabled:opacity-40"><RotateCcw size={13} />Reset defaults</button></div>
+      </details>}
       <label className="block text-xs font-medium text-slate-600">Notes model
         <select aria-label="Recording model" disabled={active} value={voice.selectedId || ''} onChange={(event) => voice.select(event.target.value)} className="mt-1.5 h-10 w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 text-sm">
           <option value="builtin">Hosted Gemini (automatic fallback)</option>

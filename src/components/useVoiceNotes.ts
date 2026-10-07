@@ -3,17 +3,19 @@ import { get, set } from 'idb-keyval';
 import type { CustomAIConnection } from '../types';
 import { askCustomAI } from '../services/customAI';
 import { loadSavedConnections } from '../services/connectionStore';
-import { idleVoiceState, lecturePrompt, transcriptChunks, VoiceSession } from '../services/voiceSession';
+import { idleVoiceState, lecturePrompt, transcriptChunks, voiceTranscriptIssue, VoiceSession } from '../services/voiceSession';
 import type { SpeechEngine, VoiceSegment, VoiceSessionState } from '../services/voiceSession';
 
 export interface VoiceJob extends VoiceSegment {
   status: 'processing' | 'failed' | 'saved';
   error?: string;
   parts: string[];
+  instructions?: string;
 }
 
 export function useVoiceNotes(options: {
   userId?: string; documentId: string; pageNumber: number; pageText: string;
+  instructions?: string;
   onSave: (job: VoiceJob, response: string) => Promise<void>;
 }) {
   const [session, setSession] = useState<VoiceSessionState>(idleVoiceState);
@@ -41,6 +43,8 @@ export function useVoiceNotes(options: {
   };
   const process = async (initial: VoiceJob) => {
     if (running.current.has(initial.id)) return;
+    const issue = voiceTranscriptIssue(initial);
+    if (issue) { setNotice(issue); return; }
     running.current.add(initial.id);
     const run = generation.current;
     let job = { ...initial, status: 'processing' as VoiceJob['status'], error: undefined };
@@ -54,12 +58,12 @@ export function useVoiceNotes(options: {
       for (let part = job.parts.length; part < chunks.length; part += 1) {
         const result = isBuiltin
           ? await import('../services/ai').then(m => m.askAIAboutPage({
-              prompt: lecturePrompt(chunks[part]),
+              prompt: lecturePrompt(chunks[part], job.instructions),
               pageNumber: job.pageNumber, pageText: job.pageText, documentContext: `[Page ${job.pageNumber}]\n${job.pageText}`,
               scope: 'page', referencesEnabled: false, history: [],
               modelPreference: 'gemini-flash', allowFallback: true, purpose: 'voice-notes'
             }))
-          : await askCustomAI({ connection: connection!, prompt: lecturePrompt(chunks[part]),
+          : await askCustomAI({ connection: connection!, prompt: lecturePrompt(chunks[part], job.instructions),
               pageNumber: job.pageNumber, pageText: job.pageText, documentContext: `[Page ${job.pageNumber}]\n${job.pageText}`,
               scope: 'page', referencesEnabled: false, history: [] });
         if (run !== generation.current) return;
@@ -106,7 +110,9 @@ export function useVoiceNotes(options: {
       },
       onState: (state) => { if (generation.current === run) setSession(state); },
       onSegment: (segment, interrupted) => {
-        const job: VoiceJob = { ...segment, status: 'failed', parts: [], error: 'Recording interrupted. Retry to create notes from the recovered transcript.' };
+        const issue = voiceTranscriptIssue(segment);
+        if (issue) { if (generation.current === run) setNotice(issue); return; }
+        const job: VoiceJob = { ...segment, instructions: latest.current.options.instructions, status: 'failed', parts: [], error: 'Recording interrupted. Retry to create notes from the recovered transcript.' };
         if (interrupted) void update(job).catch(() => undefined);
         else void processRef.current(job);
       },
@@ -139,7 +145,8 @@ export function useVoiceNotes(options: {
     stop: () => controller.current?.stop(),
     retry: (job: VoiceJob) => {
       if (!selectedId) { setNotice('Add a Custom API before retrying.'); return; }
-      void processRef.current({ ...job, connectionId: selectedId, parts: selectedId === job.connectionId ? job.parts : [] });
+      const instructions = latest.current.options.instructions;
+      void processRef.current({ ...job, instructions, connectionId: selectedId, parts: selectedId === job.connectionId && instructions === job.instructions ? job.parts : [] });
     },
   };
 }
