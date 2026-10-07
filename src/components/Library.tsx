@@ -59,6 +59,7 @@ export function Library({ documents, folders, onOpenDocument, onAddDocument, onD
   }, [folders, selectedFolderId]);
 
   const processFile = async (file: File) => {
+    if (!account) { onRequireAuth(); return; }
     if (isImporting) return;
     setError(null);
     setIsImporting(true);
@@ -86,6 +87,7 @@ export function Library({ documents, folders, onOpenDocument, onAddDocument, onD
   };
 
   const createNotebook = async () => {
+    if (!account) { onRequireAuth(); return; }
     if (isImporting) return;
     const title = window.prompt('Notebook name', 'Untitled notebook')?.trim();
     if (!title) return;
@@ -218,9 +220,9 @@ export function Library({ documents, folders, onOpenDocument, onAddDocument, onD
           <h2 className="mt-3 text-lg font-semibold text-[#171717]">Bring in your next document</h2>
           <p className="mt-1 text-sm text-slate-500">Drop it here or browse PDF, Word, text, Markdown, HTML, RTF, and CSV files.</p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
-            <button type="button" disabled={isImporting} onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 text-sm disabled:opacity-60">
+            <button type="button" disabled={isImporting} onClick={() => account ? fileInputRef.current?.click() : onRequireAuth()} className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 text-sm disabled:opacity-60">
               {isImporting && <Loader2 size={15} className="animate-spin" />}
-              {isImporting ? 'Preparing…' : 'Select document'}
+              {isImporting ? 'Preparing…' : account ? 'Select document' : 'Sign in to add a document'}
             </button>
             <button type="button" disabled={isImporting} onClick={createNotebook} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-indigo-300 hover:text-indigo-700 disabled:opacity-60"><NotebookPen size={16} />Blank notebook</button>
           </div>
@@ -260,7 +262,7 @@ export function Library({ documents, folders, onOpenDocument, onAddDocument, onD
                 <button type="submit" className="rounded bg-indigo-600 px-2 py-1 text-xs font-semibold text-white">Create</button>
                 <button type="button" onClick={() => { setCreatingFolder(false); setNewFolderName(''); }} className="p-1 text-slate-400" aria-label="Cancel folder creation"><X size={14} /></button>
               </form>
-            ) : <button type="button" onClick={() => setCreatingFolder(true)} className="flex shrink-0 items-center gap-2 rounded-md border border-dashed border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-700"><FolderPlus size={14} />New folder</button>}
+            ) : <button type="button" onClick={() => account ? setCreatingFolder(true) : onRequireAuth()} className="flex shrink-0 items-center gap-2 rounded-md border border-dashed border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-700"><FolderPlus size={14} />New folder</button>}
           </div>
 
           {documents.length === 0 ? (

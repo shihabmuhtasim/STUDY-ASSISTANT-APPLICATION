@@ -151,8 +151,7 @@ export function AIAssistant({
   const modelMenuRef = useRef<HTMLDivElement>(null);
   const [modelMenuMaxHeight, setModelMenuMaxHeight] = useState(288);
   const [insertModalState, setInsertModalState] = useState({ isOpen: false, promptQuestion: '', aiResponse: '' });
-  // Temporarily unlocked: all premium features are open to everyone
-  const hasProAccess = true; // eslint-disable-line @typescript-eslint/no-unused-vars
+  const hasProAccess = Boolean(account && 'plan' in account && account.plan === 'pro');
   const remainingPercent = account && 'aiRemainingPercent' in account ? account.aiRemainingPercent : 0;
   const maxPage = Math.max(1, documentPages.length);
   const abortControllerRef = useRef<AbortController | null>(null);
