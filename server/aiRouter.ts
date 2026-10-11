@@ -240,7 +240,7 @@ function readModelText(output: unknown) {
 function buildContext(request: AIRequest) {
   const history = (request.history || []).slice(-2).map((item) => `Student: ${item.prompt.slice(0, 700)}\nAssistant: ${item.response.slice(0, 1_800)}`).join('\n\n');
   const pageText = request.pageText?.trim() ? request.pageText.slice(0, 12_000) : '[No selectable text was extracted from this page. Use the page image if supplied.]';
-  const documentText = request.documentText?.trim() ? request.documentText.slice(0, 22_000) : '[Whole-document text is unavailable.]';
+  const documentText = request.documentText?.trim() ? request.documentText.slice(0, 52_000) : '[Whole-document text is unavailable.]';
   const focus = request.scope === 'document'
     ? 'Study scope: WHOLE DOCUMENT. Synthesize across all supplied pages, cite relevant page numbers, and do not treat the current page as the primary focus.'
     : `Study scope: PAGE ${request.pageNumber}. Focus on this page first, using the wider document for context or cross-page questions.`;

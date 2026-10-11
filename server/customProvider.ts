@@ -41,7 +41,7 @@ function outputTokenLimit(input: CustomProviderInput) {
 function buildContext(input: CustomProviderInput) {
   const history = input.history.slice(-2).map((item) => `Student: ${item.prompt.slice(0, 700)}\nAssistant: ${item.response.slice(0, 1_800)}`).join('\n\n');
   const page = input.pageText.trim() ? input.pageText.slice(0, 12_000) : '[No selectable text was extracted from this page. Use the page image if supplied.]';
-  const document = input.documentContext.trim() ? input.documentContext.slice(0, 22_000) : '[Whole-document text is unavailable.]';
+  const document = input.documentContext.trim() ? input.documentContext.slice(0, 52_000) : '[Whole-document text is unavailable.]';
   const focus = input.scope === 'document'
     ? 'Study scope: WHOLE DOCUMENT. Synthesize across all supplied pages, cite relevant page numbers, and do not treat the current page as the primary focus.'
     : `Study scope: PAGE ${input.pageNumber}. Focus on this page first, using the wider document when useful.`;

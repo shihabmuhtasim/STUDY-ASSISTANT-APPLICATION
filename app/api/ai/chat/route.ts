@@ -63,7 +63,7 @@ export async function POST(request: Request) {
       prompt,
       pageNumber: body.pageNumber,
       pageText: body.pageText?.slice(0, 12_000),
-      documentText: body.documentText?.slice(0, 22_000),
+      documentText: body.documentText?.slice(0, 52_000),
       pageImage: hasProAccess ? body.pageImage : undefined,
       attachmentImages: body.attachmentImages,
       history: body.history?.slice(-3),

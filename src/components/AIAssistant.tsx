@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Paperclip, Settings2, X } from 'lucide-react';
 import { StarterPromptsEditor } from './StarterPromptsEditor';
+import { includeStudyMaterials, type StudyMaterial } from '../utils/studyMaterials';
 import { prepareChatAttachment, type ChatAttachment } from '../utils/chatAttachments';
 import { Bot, Check, ChevronDown, Copy, Crown, HelpCircle, Image as ImageIcon, KeyRound, ListFilter, Loader2, Lock, Mic, MicOff, Plus, Quote, Radio, Send, Sparkles, Square } from 'lucide-react';
 import { AccountIdentity, AccountSummary, AIInteraction, AIModelPreference, AISourceReference, CustomAIConnection } from '../types';
@@ -17,6 +18,7 @@ import { referencesUsedInAnswer } from '../utils/answerReferences';
 import { useSpeechTranscription } from '../hooks/useSpeechTranscription';
 
 interface AIAssistantProps {
+  studyMaterials?: StudyMaterial[];
   starterPrompts?: string[];
   onStarterPromptsChange?: (prompts: string[]) => void;
   pageNumber: number;
@@ -95,6 +97,7 @@ function normalizeModelResponse(value: string) {
 }
 
 export function AIAssistant({
+  studyMaterials = [],
   starterPrompts,
   onStarterPromptsChange,
   pageNumber,
@@ -125,6 +128,7 @@ export function AIAssistant({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [includeImage, setIncludeImage] = useState(true);
+  const [includeNotes, setIncludeNotes] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [attaching, setAttaching] = useState(false);
   const attachmentInput = useRef<HTMLInputElement>(null);
@@ -307,12 +311,16 @@ export function AIAssistant({
       const normalizedEnd = Math.max(normalizedStart, Math.min(maxPage, rangeEnd));
       const selectedRange = manualRangeEnabled ? { start: normalizedStart, end: normalizedEnd } : undefined;
       const contextBundle = buildQuestionContextBundle(documentPages, text, pageNumber, scope, referencesEnabled, undefined, selectedRange);
+      const originalContext = contextBundle.context || documentContext.slice(0, scope === 'document' ? 20_000 : 14_000);
+      const studyContext = includeNotes ? includeStudyMaterials(originalContext, studyMaterials, pageNumber, scope, selectedRange) : { context: originalContext, images: [] };
+      const attachmentImages = [...attachments.flatMap(a => a.images), ...studyContext.images];
+      if (attachmentImages.length > 6) throw new Error('There are more than six attached images and note diagrams. Choose fewer pages or remove attachments before sending.');
       const request = {
         prompt: text.trim(),
         pageNumber,
         pageText,
-        documentContext: (attachments.length ? `Attached files (images follow in this order after the current page image, if included): ${attachments.map(a => `${a.name}: ${a.images.length} page(s)/image(s)`).join('; ')}. Read the attached visuals, including graphs, not only extracted text.\n\n` : '') + (contextBundle.context || documentContext.slice(0, scope === 'document' ? 20_000 : 14_000)),
-        attachmentImages: attachments.flatMap(a => a.images),
+        documentContext: (attachments.length ? `Attached files (images follow in this order after the current page image, if included): ${attachments.map(a => `${a.name}: ${a.images.length} page(s)/image(s)`).join('; ')}. Read the attached visuals, including graphs, not only extracted text.\n\n` : '') + studyContext.context,
+        attachmentImages,
         pageImage: scope === 'page' && includeImage ? pageImage || undefined : undefined,
         history,
         scope,
@@ -430,6 +438,9 @@ export function AIAssistant({
         </div>
       </div>
 
+      <label className="flex shrink-0 cursor-pointer items-center gap-2 border-b border-slate-100 px-3 py-2 text-xs text-slate-600" title="Send saved notes, lecture transcripts, text annotations and note diagrams for the current page or selected range to the selected AI provider.">
+        <input type="checkbox" checked={includeNotes} onChange={event => setIncludeNotes(event.target.checked)} className="accent-indigo-600" />Include notes and transcripts
+      </label>
       <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
         {history.length === 0 ? (
           <div className="py-8 text-center">

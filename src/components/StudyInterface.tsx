@@ -6,6 +6,7 @@ import { saveEncryptedConnection, deleteEncryptedConnection } from '../services/
 import { PDFViewer } from './PDFViewer';
 import { NotesPanel } from './NotesPanel';
 import { AIAssistant } from './AIAssistant';
+import type { StudyMaterial } from '../utils/studyMaterials';
 import { AccountIdentity, AccountSummary, StudyDocument, PageNote, AIInteraction, NoteBlock, AnnotationStroke, AISourceReference, PDFCitationTarget } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { ArrowLeft, ChevronLeft, ChevronRight, Download, BookOpen, GripVertical, GripHorizontal, FileText, Sparkles, LayoutGrid, Eye, Files, Maximize2, Mic, Minimize2, Plus, SlidersHorizontal, Wrench } from 'lucide-react';
@@ -385,6 +386,14 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   };
 
   const aiAssistantProps = {
+    studyMaterials: Array.from(new Set([...Object.keys(notes), ...voice.jobs.map(job => String(job.pageNumber)), ...Object.keys(annotations)])).map(key => {
+      const page = Number(key), note = notes[page], strokes = annotations[page] || [];
+      return {
+        pageNumber: page,
+        text: [note?.content ? richContentToStructuredText(note.content) : '', ...(note?.blocks || []).map(block => `${block.question || (block.source === 'voice' ? 'Lecture notes' : 'Note')}\n${richContentToStructuredText(block.content)}`), ...voice.jobs.filter(job => job.pageNumber === page).map(job => `Lecture transcript:\n${job.transcript}`), ...strokes.flatMap(stroke => stroke.tool === 'text' ? [`Slide annotation: ${stroke.text}`] : [])].filter(Boolean).join('\n\n'),
+        images: [...(note?.blocks || []).flatMap(block => block.drawing ? [block.drawing.dataUrl] : []), ...strokes.flatMap(stroke => stroke.tool === 'image' ? [stroke.dataUrl] : [])],
+      } satisfies StudyMaterial;
+    }),
     starterPrompts: document.aiStarterPrompts,
     onStarterPromptsChange: (aiStarterPrompts: string[]) => onUpdateDocument({ ...document, aiStarterPrompts, updatedAt: Date.now() }),
     pageNumber,

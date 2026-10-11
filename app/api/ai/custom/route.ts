@@ -28,6 +28,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as RequestBody | null;
   if (!body?.prompt?.trim() || body.prompt.length > 24_000 || !Number.isInteger(body.pageNumber) || (body.pageNumber || 0) < 1) return NextResponse.json({ error: 'Enter a valid question.' }, { status: 400 });
   if (body.pageImage && body.pageImage.length > 4_000_000) return NextResponse.json({ error: 'The page image is too large.' }, { status: 413 });
+  if (body.documentContext && body.documentContext.length > 52_000) return NextResponse.json({ error: 'The study context is too large. Choose fewer pages.' }, { status: 413 });
 
   let connection: CustomAIConnection | null = null;
   try { visualImages(body); } catch (error) { return NextResponse.json({ error: (error as Error).message }, { status: 400 }); }
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
       prompt: body.prompt.trim(),
       pageNumber: body.pageNumber!,
       pageText: body.pageText?.slice(0, 12_000) || '',
-      documentContext: body.documentContext?.slice(0, 22_000) || '',
+      documentContext: body.documentContext?.slice(0, 52_000) || '',
       scope: body.scope === 'document' ? 'document' : 'page',
       referencesEnabled: body.referencesEnabled === true,
       pageImage: body.pageImage,
