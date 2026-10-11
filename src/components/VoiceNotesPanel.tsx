@@ -63,6 +63,7 @@ export function VoiceNotesPanel({ voice, pageNumber, notes, onManage, onOpenPage
           <details className="text-xs text-slate-600"><summary className="cursor-pointer font-medium">Saved transcript</summary><p className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap text-sm">{voice.jobs.find(job => job.id === block.id)?.transcript}</p></details>
           <button type="button" disabled={!voice.ready || !voice.selectedId} onClick={() => voice.regenerate(voice.jobs.find(job => job.id === block.id)!)} title="Regenerate this note using the saved transcript, original page context, and your saved instructions" className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-2 text-xs font-semibold disabled:opacity-40"><RotateCcw size={13} />Regenerate notes</button>
         </div>}
+        {voice.ready && !voice.jobs.some(job => job.id === block.id) && <p className="mt-3 text-xs text-slate-500">Original transcript unavailable for this older note.</p>}
       </article>)}
       {!notes.length && !pending.length && !active && <div className="px-5 py-10 text-center"><Mic size={24} className="mx-auto text-slate-400" /><h3 className="mt-3 text-sm font-semibold">Your lecture notes, page by page</h3><p className="mt-1 text-xs text-slate-500">No recordings yet.</p></div>}
     </div>
