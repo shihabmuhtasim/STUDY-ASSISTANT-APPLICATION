@@ -12,6 +12,8 @@ import {PDFViewer} from './src/components/PDFViewer';import {prepareChatAttachme
 import {MathMarkdown} from './src/components/MathMarkdown';import {markdownToRichTextHtml} from './src/components/RichTextEditor';
 window.mathExample=String.raw\`PUE is $\\frac{P_{total}}{P_{IT}}$. It means: \\text{Total Facility Power} = \\text{IT Equipment Power}\`;
 window.noteFormula=()=>markdownToRichTextHtml(window.mathExample);
+window.brokenFormula=String.raw\`$\\text{Embodied_GPU}_{\\text{FU}} = \\text{embodied_impact_GPU} \\times \\frac{\\text{GPU_hours_training}}{\\text{lifespan_hours}} \\times \\text{usage_rate}$\`;
+window.fixedFormula=()=>markdownToRichTextHtml(window.brokenFormula);
 const noop=()=>{};
 async function boot(){const pdf=await PDFDocument.create();const font=await pdf.embedFont(StandardFonts.Helvetica);pdf.addPage([600,500]).drawText('Selectable PDF text: this entire sentence can be copied.',{x:40,y:350,size:18,font});const bytes=await pdf.save();const file=new Blob([bytes]);
 window.attachTest=async()=>{const p=await prepareChatAttachment(new File([bytes],'slide.pdf',{type:'application/pdf'}));const canvas=document.createElement('canvas');canvas.width=100;canvas.height=100;const ctx=canvas.getContext('2d');ctx.fillStyle='red';ctx.fillRect(0,0,100,100);const png=await new Promise(resolve=>canvas.toBlob(resolve));const i=await prepareChatAttachment(new File([png],'diagram.png',{type:'image/png'}));return {pdf:p.images.length,image:i.images.length,data:i.images[0]};};
@@ -27,6 +29,8 @@ const attachment=await page.evaluate(()=>window.attachTest());assert.equal(attac
 assert.equal(await page.locator('#math-preview .katex .mfrac').count(),1);
 assert.doesNotMatch(await page.locator('#math-preview').innerText(),/\\text/);
 assert.match(await page.evaluate(()=>window.noteFormula()),/class="mfrac"/);
+assert.match(await page.evaluate(()=>window.fixedFormula()),/class="mfrac"/);
+assert.doesNotMatch(await page.evaluate(()=>window.fixedFormula()),/katex-error/);
 await page.getByTitle('Draw on PDF',{exact:true}).click();assert.equal(await page.getByLabel('Annotation color').inputValue(),'#000000');
 await page.getByTitle('Highlighter',{exact:true}).click();assert.equal(await page.getByLabel('Annotation color').inputValue(),'#ffff00');
 await page.getByLabel('Highlighter width').fill('60');const canvas=page.locator('canvas').last();const b=await canvas.boundingBox();await page.mouse.move(b.x+50,b.y+100);await page.mouse.down();await page.mouse.move(b.x+150,b.y+115);await page.mouse.move(b.x+250,b.y+90);await page.mouse.up();
@@ -40,7 +44,7 @@ await page.mouse.click(b.x+80,b.y+160);await page.getByLabel('PDF text annotatio
 await page.getByLabel('Annotation font size').fill('24');assert.equal(await page.evaluate(()=>window.strokes[0].fontSize),.024);
 await page.getByTitle('Pen',{exact:true}).click();assert.equal(await page.getByTitle('Move text box').count(),0);assert.equal(await page.evaluate(()=>window.strokes[0].text),'Saved text');
 await page.getByTitle('Add text box',{exact:true}).click();await page.mouse.click(b.x+350,b.y+300);await page.getByTitle('Pen',{exact:true}).click();assert.equal(await page.evaluate(()=>window.strokes.length),1);
-await page.screenshot({path:'/private/tmp/pdf-vision-ui-desktop.png'});await page.reload();await page.getByTitle('Draw on PDF',{exact:true}).click();await page.getByTitle('Highlighter',{exact:true}).click();assert.equal(await page.getByLabel('Annotation color').inputValue(),'#00ff00');assert.equal(await page.getByLabel('Highlighter width').inputValue(),'60');
+await page.getByTitle('Highlighter',{exact:true}).click();await page.screenshot({path:'/private/tmp/pdf-vision-ui-desktop.png'});await page.reload();await page.getByLabel('Highlighter width').waitFor();assert.equal(await page.getByLabel('Annotation color').inputValue(),'#00ff00');assert.equal(await page.getByLabel('Highlighter width').inputValue(),'60');
 await page.getByTitle('Eraser',{exact:true}).click();assert.equal(await page.getByLabel('Eraser size').inputValue(),'80');await page.getByTitle('Add text box',{exact:true}).click();assert.equal(await page.getByLabel('Annotation font size').inputValue(),'24');
 await page.setViewportSize({width:390,height:844});await page.screenshot({path:'/private/tmp/pdf-vision-ui-mobile.png'});assert.deepEqual(errors,[]);console.log('PASS: rendered fractions in AI and notes, selectable PDF text, attachments, straight highlights, per-tool colors and reload persistence, adjustable eraser/font sizes, empty-box cleanup, desktop/mobile rendering.');
 }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}

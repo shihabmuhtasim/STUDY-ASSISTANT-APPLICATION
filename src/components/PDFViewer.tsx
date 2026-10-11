@@ -55,6 +55,8 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
     try {
       const saved = JSON.parse(localStorage.getItem('notemydoc-annotation-settings') || 'null');
       if (saved) {
+        if (['pen', 'highlight', 'text', 'eraser'].includes(saved.tool)) setAnnotationTool(saved.tool);
+        if (typeof saved.enabled === 'boolean') setAnnotationEnabled(saved.enabled);
         setAnnotationColors(current => Object.fromEntries(Object.entries(current).map(([tool, fallback]) => [tool, /^#[0-9a-f]{6}$/i.test(saved.colors?.[tool]) ? saved.colors[tool] : fallback])) as typeof current);
         if (saved.highlightWidth >= 5 && saved.highlightWidth <= 80) setHighlightWidth(saved.highlightWidth);
         if (saved.eraserWidth >= 5 && saved.eraserWidth <= 80) setEraserWidth(saved.eraserWidth);
@@ -65,8 +67,8 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
   }, []);
   useEffect(() => {
     if (!annotationSettingsLoaded) return;
-    try { localStorage.setItem('notemydoc-annotation-settings', JSON.stringify({ colors: annotationColors, highlightWidth, eraserWidth, textFontSize })); } catch { /* Tools still work without storage. */ }
-  }, [annotationSettingsLoaded, annotationColors, highlightWidth, eraserWidth, textFontSize]);
+    try { localStorage.setItem('notemydoc-annotation-settings', JSON.stringify({ tool: annotationTool, enabled: annotationEnabled, colors: annotationColors, highlightWidth, eraserWidth, textFontSize })); } catch { /* Tools still work without storage. */ }
+  }, [annotationSettingsLoaded, annotationTool, annotationEnabled, annotationColors, highlightWidth, eraserWidth, textFontSize]);
   const [panMode, setPanMode] = useState(false);
   const [renderVersion, setRenderVersion] = useState(0);
   const [citationHighlightStatus, setCitationHighlightStatus] = useState<'idle' | 'highlighted' | 'page-only'>('idle');
@@ -451,7 +453,7 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
 
         <div className="flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
           <button type="button" onClick={() => { setPanMode(value => !value); setAnnotationEnabled(false); }} aria-pressed={panMode} title="Hand tool: drag to pan. Turn off to select and copy text." className={`p-1.5 rounded ${panMode ? 'bg-indigo-600 text-white' : 'text-slate-600'}`}><Hand size={15} /></button>
-          <button type="button" onClick={() => { setAnnotationEnabled((value) => !value); setAnnotationTool('pen'); }} className={`p-1.5 rounded ${annotationEnabled ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-white'}`} title="Draw on PDF"><PenLine size={15} /></button>
+          <button type="button" onClick={() => setAnnotationEnabled((value) => !value)} className={`p-1.5 rounded ${annotationEnabled ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-white'}`} title="Draw on PDF"><PenLine size={15} /></button>
           {annotationEnabled && (
             <>
               <button type="button" onClick={() => setAnnotationTool('pen')} className={`p-1.5 rounded ${annotationTool === 'pen' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500'}`} title="Pen"><PenLine size={15} /></button>
