@@ -3,6 +3,7 @@ import { get, set } from 'idb-keyval';
 import type { CustomAIConnection } from '../types';
 import { askCustomAI } from '../services/customAI';
 import { loadSavedConnections } from '../services/connectionStore';
+import { loadCloudVoiceJobs, saveCloudVoiceJob } from '../services/cloudData';
 import { idleVoiceState, lecturePrompt, transcriptChunks, voiceTranscriptIssue, VoiceSession } from '../services/voiceSession';
 import type { SpeechEngine, VoiceSegment, VoiceSessionState } from '../services/voiceSession';
 
@@ -11,6 +12,7 @@ export interface VoiceJob extends VoiceSegment {
   error?: string;
   parts: string[];
   instructions?: string;
+  updatedAt?: number;
 }
 
 export function useVoiceNotes(options: {
@@ -34,11 +36,16 @@ export function useVoiceNotes(options: {
   const key = `voice-notes:${options.userId || 'guest'}:${options.documentId}`;
 
   const update = (job: VoiceJob) => {
+    job = { ...job, updatedAt: Date.now() };
     const next = jobsRef.current.some((item) => item.id === job.id)
       ? jobsRef.current.map((item) => item.id === job.id ? job : item) : [...jobsRef.current, job];
     jobsRef.current = next;
     setJobs(next);
-    persistence.current = persistence.current.catch(() => undefined).then(() => set(key, next));
+    const userId = options.userId, documentId = options.documentId;
+    persistence.current = persistence.current.catch(() => undefined).then(async () => {
+      await set(key, next);
+      if (userId) await saveCloudVoiceJob(userId, documentId, job).catch(() => setNotice('Transcript saved on this device, but cloud sync failed. Reopen this document when online to sync it.'));
+    });
     return persistence.current;
   };
   const process = async (initial: VoiceJob) => {
@@ -119,12 +126,27 @@ export function useVoiceNotes(options: {
     });
     controller.current = voice;
     voice.setPage(latest.current.options.pageNumber, latest.current.options.pageText);
-    void persistence.current.catch(() => undefined).then(() => get<VoiceJob[]>(key)).then((saved) => {
+    void persistence.current.catch(() => undefined).then(() => Promise.all([
+      get<VoiceJob[]>(key),
+      options.userId ? loadCloudVoiceJobs(options.userId, options.documentId).catch(() => { setNotice('Cloud transcripts could not be loaded. Local recordings remain available.'); return [] as VoiceJob[]; }) : Promise.resolve([] as VoiceJob[]),
+    ])).then(([saved, cloud]) => {
       if (generation.current !== run) return;
-      jobsRef.current = (saved || []).map((job) => job.status === 'processing'
+      const merged = new Map<string, VoiceJob>();
+      [...cloud, ...(saved || [])].forEach(job => {
+        const previous = merged.get(job.id);
+        if (!previous || (job.updatedAt || job.createdAt) >= (previous.updatedAt || previous.createdAt)) merged.set(job.id, job);
+      });
+      jobsRef.current = [...merged.values()].sort((a, b) => a.createdAt - b.createdAt).map((job) => job.status === 'processing'
         ? { ...job, status: 'failed', error: 'Processing was interrupted. Retry to finish creating notes.' } : job);
       setJobs(jobsRef.current);
       setReady(true);
+      void set(key, jobsRef.current).catch(() => undefined);
+      if (options.userId) {
+        const userId = options.userId;
+        void Promise.all((saved || []).filter(job => !cloud.some(remote => remote.id === job.id && (remote.updatedAt || remote.createdAt) >= (job.updatedAt || job.createdAt)))
+          .map(job => saveCloudVoiceJob(userId, options.documentId, job)))
+          .catch(() => setNotice('Some older transcripts are still waiting for cloud sync. They remain saved on this device.'));
+      }
     }).catch(() => setNotice('Browser storage is unavailable. Enable it before recording.'));
     return () => { generation.current += 1; voice.dispose(); controller.current = null; };
   }, [key]);
@@ -147,6 +169,11 @@ export function useVoiceNotes(options: {
       if (!selectedId) { setNotice('Add a Custom API before retrying.'); return; }
       const instructions = latest.current.options.instructions;
       void processRef.current({ ...job, instructions, connectionId: selectedId, parts: selectedId === job.connectionId && instructions === job.instructions ? job.parts : [] });
+    },
+    regenerate: (job: VoiceJob) => {
+      if (!selectedId) { setNotice('Choose a notes model first.'); return; }
+      setNotice(null);
+      void processRef.current({ ...job, instructions: latest.current.options.instructions, connectionId: selectedId, parts: [] });
     },
   };
 }

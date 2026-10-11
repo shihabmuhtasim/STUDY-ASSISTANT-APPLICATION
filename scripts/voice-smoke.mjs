@@ -13,6 +13,7 @@ const bundle = await build({ absWorkingDir: root, bundle: true, write: false, fo
     import {VoiceNotesPanel,VoiceNotesDialog} from './src/components/VoiceNotesPanel';
     import {markdownToRichTextHtml} from './src/components/RichTextEditor';
     import {StarterPromptsEditor} from './src/components/StarterPromptsEditor';
+    import {del} from 'idb-keyval'; window.clearLocalVoice=()=>del('voice-notes:test:voice-test');
     window.calls=[];window.engines=[];window.fail=false;
     const realNow=Date.now;window.clock=0;Date.now=()=>realNow()+window.clock;
     class Engine { start(){window.engines.push(this);this.onstart?.();}stop(){setTimeout(()=>this.onend?.(),5);}abort(){this.onend?.();} }
@@ -28,8 +29,10 @@ const bundle = await build({ absWorkingDir: root, bundle: true, write: false, fo
       return <><nav><button onClick={()=>setTab(tab==='voice'?'pdf':'voice')}>Switch tab</button><button onClick={()=>setPage(p=>p+1)}>Next page</button><button onClick={()=>setOpen(true)}>Voice controls</button><button onClick={()=>setEditing(true)}>Edit questions</button></nav><main style={{height:'85vh'}}>{tab==='voice'?panel:<p>Document reader: {page}</p>}</main><VoiceNotesDialog open={open} onClose={()=>setOpen(false)}>{panel}</VoiceNotesDialog><StarterPromptsEditor open={editing} prompts={prompts} defaults={['Summarize this page']} onSave={setPrompts} onClose={()=>setEditing(false)}/></>;
     }createRoot(document.getElementById('root')).render(<App/>);` },
   plugins: [{ name: 'mock-providers', setup(b) {
-    b.onResolve({ filter: /services\/ai$|services\/customAI$|\.\/customAI$|services\/connectionStore$/ }, args => ({ path: args.path, namespace: 'fake' }));
-    b.onLoad({ filter: /.*/, namespace: 'fake' }, args => ({ contents: args.path.endsWith('/ai')
+    b.onResolve({ filter: /services\/ai$|services\/customAI$|\.\/customAI$|services\/connectionStore$|services\/cloudData$/ }, args => ({ path: args.path, namespace: 'fake' }));
+    b.onLoad({ filter: /.*/, namespace: 'fake' }, args => ({ contents: args.path.endsWith('cloudData')
+      ? `export async function loadCloudVoiceJobs(){return JSON.parse(localStorage.getItem('mock-cloud-voice')||'[]')} export async function saveCloudVoiceJob(u,d,job){const jobs=JSON.parse(localStorage.getItem('mock-cloud-voice')||'[]');localStorage.setItem('mock-cloud-voice',JSON.stringify([...jobs.filter(j=>j.id!==job.id),job]));}`
+      : args.path.endsWith('/ai')
       ? `export async function askAIAboutPage(input){window.calls.push(input);return {response:'Hosted lecture notes',provider:'gemini',model:'gemini-flash'}}`
       : args.path.endsWith('customAI')
       ? `export async function askCustomAI(input){window.calls.push(input);await new Promise(r=>setTimeout(r,50));if(window.fail)throw Error('Provider unavailable; transcript retained');return {response:'## Lecture notes\\n'+input.pageText+' explained.',model:'test'}} export async function testCustomAIConnection(){}`
@@ -85,6 +88,11 @@ try {
   await page.waitForFunction(()=>window.voice.jobs.length===4 && window.voice.jobs.every(j=>j.status==='saved'));
   assert.equal(await page.evaluate(()=>window.calls.at(-1).purpose),'voice-notes');
   assert.equal(await page.evaluate(()=>window.calls.at(-1).modelPreference),'gemini-flash');
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('mock-cloud-voice')).filter(job=>job.status==='saved').length),4);
+  await page.getByRole('button',{name:'Regenerate notes',exact:true}).first().click();
+  await page.waitForFunction(()=>window.calls.length===6 && window.voice.jobs.every(j=>j.status==='saved'));
+  assert.equal(await page.evaluate(()=>window.calls.at(-1).pageText),'Slide 1');
+  assert.ok(await page.evaluate(()=>window.calls.at(-1).prompt.startsWith('Create an exam recap in English.')));
   await page.getByRole('button',{name:'Edit questions',exact:true}).click();
   await page.getByRole('textbox',{name:'Starter question 1',exact:true}).fill('Explain this page using a worked example');
   await page.getByRole('button',{name:'Delete starter question 3',exact:true}).click();
@@ -101,5 +109,8 @@ try {
   await page.setViewportSize({width:390,height:844});await page.evaluate(()=>document.documentElement.dataset.theme='dark');
   await page.screenshot({path:'/private/tmp/voice-notes-mobile-dark.png'});
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(errors,[]);
+  await page.evaluate(()=>window.clearLocalVoice());await page.reload();
+  await page.waitForFunction(()=>window.voice?.ready && window.voice.jobs.length===4);
+  assert.ok(await page.evaluate(()=>window.voice.jobs.every(job=>job.transcript.length>20 && job.status==='saved')));
   console.log('PASS: empty/short recordings make zero AI calls; edited voice instructions reach both providers; starter questions edit/add/delete persist across pages; cross-tab recording, splitting, saved notes, error/retry, dialog, mobile overflow, zero browser errors.');
 } finally {await browser?.close();await new Promise(resolve=>server.close(resolve));}

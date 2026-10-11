@@ -59,6 +59,10 @@ export function VoiceNotesPanel({ voice, pageNumber, notes, onManage, onOpenPage
       {notes.map(({ pageNumber: page, block }) => <article key={block.id} className="p-5">
         <div className="mb-3 flex items-center justify-between gap-3"><h3 className="flex items-center gap-2 text-sm font-semibold"><CheckCircle2 size={16} className="text-emerald-700" />Page {page} <span className="text-xs font-normal text-slate-500">Saved</span></h3><button type="button" onClick={() => onOpenPage(page)} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium"><FileText size={13} />Open page notes</button></div>
         <div className="rich-note-content text-sm leading-relaxed text-slate-700" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(toRichTextHtml(block.content)) }} />
+        {voice.jobs.find(job => job.id === block.id && job.status === 'saved') && <div className="mt-3 space-y-2">
+          <details className="text-xs text-slate-600"><summary className="cursor-pointer font-medium">Saved transcript</summary><p className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap text-sm">{voice.jobs.find(job => job.id === block.id)?.transcript}</p></details>
+          <button type="button" disabled={!voice.ready || !voice.selectedId} onClick={() => voice.regenerate(voice.jobs.find(job => job.id === block.id)!)} title="Regenerate this note using the saved transcript, original page context, and your saved instructions" className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-2 text-xs font-semibold disabled:opacity-40"><RotateCcw size={13} />Regenerate notes</button>
+        </div>}
       </article>)}
       {!notes.length && !pending.length && !active && <div className="px-5 py-10 text-center"><Mic size={24} className="mx-auto text-slate-400" /><h3 className="mt-3 text-sm font-semibold">Your lecture notes, page by page</h3><p className="mt-1 text-xs text-slate-500">No recordings yet.</p></div>}
     </div>

@@ -7,7 +7,7 @@ import { AccountIdentity, AccountSummary, AIInteraction, AIModelPreference, AISo
 import { AIRequestError, askAIAboutPage } from '../services/ai';
 import { askCustomAI } from '../services/customAI';
 import { v4 as uuidv4 } from 'uuid';
-import Markdown from 'react-markdown';
+import { MathMarkdown } from './MathMarkdown';
 import { EditInsertModal } from './EditInsertModal';
 import { AIConnectionsModal } from './AIConnectionsModal';
 import { loadCloudPreferences, saveCloudPreferences } from '../services/cloudData';
@@ -87,19 +87,6 @@ function displayModel(model: string) {
 
 function normalizeModelResponse(value: string) {
   return value
-    .replace(/\\+\$/g, '$')
-    .replace(/\$\$([\s\S]*?)\$\$/g, '$1')
-    .replace(/\(\$([^\$\n]+)\$\)/g, '($1)')
-    .replace(/\$([^\$\n]+)\$/g, '$1')
-    .replace(/\\ge\b/g, '≥')
-    .replace(/\\le\b/g, '≤')
-    .replace(/\\times\b/g, '×')
-    .replace(/\\cdot\b/g, '·')
-    .replace(/\\approx\b/g, '≈')
-    .replace(/\\neq\b/g, '≠')
-    .replace(/\\pm\b/g, '±')
-    .replace(/\\rightarrow\b/g, '→')
-    .replace(/\\leftarrow\b/g, '←')
     .replace(/\*\*\*([^*]+)\*\*\*/g, '**$1**')
     .replace(/^\s*\*{3,}\s*$/gm, '')
     .replace(/\\([*_`])/g, '$1')
@@ -460,7 +447,7 @@ export function AIAssistant({
             <div key={item.id} className="space-y-3">
               <div className="flex justify-end"><div className="bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-medium max-w-[85%]">{item.prompt}</div></div>
               <div className="bg-indigo-50/70 text-indigo-950 px-4 py-3 rounded-lg text-sm border border-indigo-100 space-y-3">
-                <div className="prose prose-sm prose-slate max-w-none leading-relaxed"><Markdown>{item.response}</Markdown></div>
+                <div className="prose prose-sm prose-slate max-w-none leading-relaxed"><MathMarkdown>{item.response}</MathMarkdown></div>
                 {referencesUsedInAnswer(item.response, item.references || []).length > 0 && (
                   <div className="rounded-md border border-indigo-100 bg-white/80 p-2.5">
                     <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase text-indigo-700"><Quote size={12} />Sources</div>

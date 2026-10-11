@@ -7,11 +7,13 @@ interface AnnotationCanvasProps {
   tool: AnnotationTool;
   color: string;
   highlightWidth?: number;
+  eraserWidth?: number;
+  textFontSize?: number;
   strokes: AnnotationStroke[];
   onChange: (strokes: AnnotationStroke[]) => void;
 }
 
-export function AnnotationCanvas({ enabled, tool, color, highlightWidth = 0.025, strokes, onChange }: AnnotationCanvasProps) {
+export function AnnotationCanvas({ enabled, tool, color, highlightWidth = 0.025, eraserWidth = 0.025, textFontSize = 0.018, strokes, onChange }: AnnotationCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const drawing = useRef<InkAnnotation | null>(null);
@@ -26,6 +28,20 @@ export function AnnotationCanvas({ enabled, tool, color, highlightWidth = 0.025,
   } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const erasing = useRef(false);
+
+  useEffect(() => {
+    if (enabled && tool === 'text') return;
+    setEditingId(null);
+    interaction.current = null;
+    const next = strokesRef.current.filter(item => item.tool !== 'text' || item.text.trim());
+    if (next.length !== strokesRef.current.length) onChange(next);
+  }, [enabled, tool]);
+
+  useEffect(() => {
+    if (!editingId || !enabled || tool !== 'text') return;
+    onChange(strokesRef.current.map(item => item.id === editingId && item.tool === 'text' ? { ...item, color, fontSize: textFontSize } : item));
+  }, [color, textFontSize]);
 
   useEffect(() => {
     strokesRef.current = strokes;
@@ -89,8 +105,9 @@ export function AnnotationCanvas({ enabled, tool, color, highlightWidth = 0.025,
     if (!enabled) return;
     const point = pointFromEvent(event);
     if (tool === 'eraser') {
-      const hit = [...strokes].reverse().find((stroke) => (stroke.tool === 'pen' || stroke.tool === 'highlight') && stroke.points.some((item) => Math.hypot(item.x - point.x, item.y - point.y) < 0.035));
-      if (hit) onChange(strokes.filter((stroke) => stroke.id !== hit.id));
+      erasing.current = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      eraseAt(point);
       return;
     }
     if (tool === 'text') {
@@ -102,7 +119,7 @@ export function AnnotationCanvas({ enabled, tool, color, highlightWidth = 0.025,
         y: Math.min(point.y, 0.88),
         width: 0.32,
         height: 0.1,
-        fontSize: 0.018,
+        fontSize: textFontSize,
         text: '',
       };
       onChange([...strokes, annotation]);
@@ -122,15 +139,33 @@ export function AnnotationCanvas({ enabled, tool, color, highlightWidth = 0.025,
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (erasing.current) { eraseAt(pointFromEvent(event)); return; }
     if (!drawing.current || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
-    drawing.current = { ...drawing.current, points: [...drawing.current.points, pointFromEvent(event)] };
+    const point = pointFromEvent(event);
+    // A marker sweeps one straight horizontal line; a pen remains freehand.
+    drawing.current = { ...drawing.current, points: tool === 'highlight'
+      ? [drawing.current.points[0], { x: point.x, y: drawing.current.points[0].y }]
+      : [...drawing.current.points, point] };
     redraw(drawing.current);
   };
 
   const finishStroke = () => {
+    erasing.current = false;
     if (!drawing.current) return;
     onChange([...strokes, drawing.current]);
     drawing.current = null;
+  };
+
+  const eraseAt = (point: { x: number; y: number }) => {
+    const aspect = canvasSize.height / Math.max(1, canvasSize.width);
+    const distance = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+      const dx = b.x - a.x, dy = (b.y - a.y) * aspect;
+      const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * aspect * dy) / (dx * dx + dy * dy || 1)));
+      return Math.hypot(point.x - a.x - t * dx, (point.y - a.y) * aspect - t * dy);
+    };
+    const next = strokesRef.current.filter(stroke => stroke.tool === 'text' || stroke.tool === 'image'
+      || !stroke.points.some((item, index) => distance(item, stroke.points[Math.max(0, index - 1)]) <= eraserWidth / 2 + stroke.width / 2));
+    if (next.length !== strokesRef.current.length) { strokesRef.current = next; onChange(next); }
   };
 
   const updateTextAnnotation = (id: string, changes: Partial<Omit<TextAnnotation, 'id' | 'tool'>>) => {
@@ -199,11 +234,12 @@ export function AnnotationCanvas({ enabled, tool, color, highlightWidth = 0.025,
         </div>
       ))}
       {strokes.filter((annotation): annotation is TextAnnotation => annotation.tool === 'text').map((annotation) => {
-        const isEditing = enabled && editingId === annotation.id;
+        const textEnabled = enabled && tool === 'text';
+        const isEditing = textEnabled && editingId === annotation.id;
         return (
           <div
             key={annotation.id}
-            className={`absolute overflow-visible border bg-white/85 shadow-sm ${enabled ? 'pointer-events-auto border-dashed border-indigo-400' : 'pointer-events-none border-transparent'}`}
+            className={`absolute overflow-visible border ${textEnabled ? 'pointer-events-auto border-dashed border-indigo-400 bg-white/85 shadow-sm' : 'pointer-events-none border-transparent bg-transparent'}`}
             style={{
               left: `${annotation.x * 100}%`,
               top: `${annotation.y * 100}%`,
@@ -220,8 +256,8 @@ export function AnnotationCanvas({ enabled, tool, color, highlightWidth = 0.025,
                 else textAreaRefs.current.delete(annotation.id);
               }}
               value={annotation.text}
-              readOnly={!enabled}
-              placeholder={enabled ? 'Type here...' : ''}
+              readOnly={!textEnabled}
+              placeholder={textEnabled ? 'Type here...' : ''}
               aria-label="PDF text annotation"
               className="h-full w-full resize-none overflow-hidden border-0 bg-transparent px-2 py-1.5 pr-14 leading-snug outline-none"
               style={{ color: annotation.color, fontSize: Math.max(12, annotation.fontSize * canvasSize.width) }}
@@ -234,7 +270,7 @@ export function AnnotationCanvas({ enabled, tool, color, highlightWidth = 0.025,
                 }
               }}
             />
-            {enabled && (isEditing || tool === 'text') && (
+            {textEnabled && (isEditing || tool === 'text') && (
               <div className="absolute right-1 top-1 flex items-center gap-0.5 rounded bg-white/95 p-0.5 shadow-sm">
                 <button
                   type="button"

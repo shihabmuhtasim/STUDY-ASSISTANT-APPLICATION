@@ -1,6 +1,16 @@
 import React, { useEffect, useRef } from 'react';
 import { Bold, Highlighter, Italic, List, ListOrdered, Underline } from 'lucide-react';
 import DOMPurify from 'dompurify';
+import { unified } from 'unified';
+import remarkParse from 'remark-parse';
+import remarkMath from 'remark-math';
+import remarkRehype from 'remark-rehype';
+import rehypeKatex from 'rehype-katex';
+import rehypeStringify from 'rehype-stringify';
+import { prepareMathMarkdown } from '../utils/mathMarkdown';
+
+const markdownProcessor = unified().use(remarkParse).use(remarkMath).use(remarkRehype)
+  .use(rehypeKatex, { strict: false, output: 'html' }).use(rehypeStringify);
 
 interface RichTextEditorProps {
   value: string;
@@ -21,60 +31,7 @@ export function toRichTextHtml(value: string) {
 
 export function markdownToRichTextHtml(value: string) {
   if (!value) return '';
-
-  const inline = (text: string) => text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\$([A-Za-z][A-Za-z0-9_{}^\\]*(?:\s*[=+\-*/]\s*[A-Za-z0-9_.{}^\\]+)?)\$/g, '$1')
-    .replace(/\*\*\*(.+?)\*\*\*/g, '**$1**')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/__(.+?)__/g, '<strong>$1</strong>')
-    .replace(/`(.+?)`/g, '<code>$1</code>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/_(.+?)_/g, '<em>$1</em>');
-
-  const lines = value.replace(/\r\n?/g, '\n').split('\n');
-  const html: string[] = [];
-  let listType: 'ul' | 'ol' | null = null;
-
-  const closeList = () => {
-    if (listType) html.push(`</${listType}>`);
-    listType = null;
-  };
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    const unordered = trimmed.match(/^[-*+]\s+(.+)/);
-    const ordered = trimmed.match(/^\d+\.\s+(.+)/);
-
-    if (unordered || ordered) {
-      const nextType = unordered ? 'ul' : 'ol';
-      if (listType !== nextType) {
-        closeList();
-        listType = nextType;
-        html.push(`<${nextType}>`);
-      }
-      html.push(`<li>${inline((unordered || ordered)![1])}</li>`);
-      continue;
-    }
-
-    closeList();
-    if (!trimmed) {
-      html.push('<br>');
-    } else if (/^###\s+/.test(trimmed)) {
-      html.push(`<h3>${inline(trimmed.replace(/^###\s+/, ''))}</h3>`);
-    } else if (/^##\s+/.test(trimmed)) {
-      html.push(`<h2>${inline(trimmed.replace(/^##\s+/, ''))}</h2>`);
-    } else if (/^#\s+/.test(trimmed)) {
-      html.push(`<h1>${inline(trimmed.replace(/^#\s+/, ''))}</h1>`);
-    } else if (!/^---+$/.test(trimmed)) {
-      html.push(`<p>${inline(trimmed)}</p>`);
-    }
-  }
-
-  closeList();
-  return DOMPurify.sanitize(html.join(''));
+  return DOMPurify.sanitize(String(markdownProcessor.processSync(prepareMathMarkdown(value))));
 }
 
 export function richTextToPlainText(value: string) {

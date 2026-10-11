@@ -45,8 +45,28 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
   const [loadError, setLoadError] = useState<string | null>(null);
   const [annotationEnabled, setAnnotationEnabled] = useState(false);
   const [annotationTool, setAnnotationTool] = useState<AnnotationTool>('pen');
-  const [annotationColor, setAnnotationColor] = useState('#ef4444');
+  const [annotationColors, setAnnotationColors] = useState({ pen: '#000000', highlight: '#ffff00', text: '#000000', eraser: '#000000' });
+  const annotationColor = annotationColors[annotationTool];
   const [highlightWidth, setHighlightWidth] = useState(25);
+  const [eraserWidth, setEraserWidth] = useState(25);
+  const [textFontSize, setTextFontSize] = useState(18);
+  const [annotationSettingsLoaded, setAnnotationSettingsLoaded] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('notemydoc-annotation-settings') || 'null');
+      if (saved) {
+        setAnnotationColors(current => Object.fromEntries(Object.entries(current).map(([tool, fallback]) => [tool, /^#[0-9a-f]{6}$/i.test(saved.colors?.[tool]) ? saved.colors[tool] : fallback])) as typeof current);
+        if (saved.highlightWidth >= 5 && saved.highlightWidth <= 80) setHighlightWidth(saved.highlightWidth);
+        if (saved.eraserWidth >= 5 && saved.eraserWidth <= 80) setEraserWidth(saved.eraserWidth);
+        if (saved.textFontSize >= 8 && saved.textFontSize <= 72) setTextFontSize(saved.textFontSize);
+      }
+    } catch { /* Keep defaults when storage is unavailable. */ }
+    setAnnotationSettingsLoaded(true);
+  }, []);
+  useEffect(() => {
+    if (!annotationSettingsLoaded) return;
+    try { localStorage.setItem('notemydoc-annotation-settings', JSON.stringify({ colors: annotationColors, highlightWidth, eraserWidth, textFontSize })); } catch { /* Tools still work without storage. */ }
+  }, [annotationSettingsLoaded, annotationColors, highlightWidth, eraserWidth, textFontSize]);
   const [panMode, setPanMode] = useState(false);
   const [renderVersion, setRenderVersion] = useState(0);
   const [citationHighlightStatus, setCitationHighlightStatus] = useState<'idle' | 'highlighted' | 'page-only'>('idle');
@@ -438,8 +458,10 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
               <button type="button" onClick={() => setAnnotationTool('highlight')} className={`p-1.5 rounded ${annotationTool === 'highlight' ? 'bg-white text-amber-600 shadow-xs' : 'text-slate-500'}`} title="Highlighter"><Highlighter size={15} /></button>
               <button type="button" onClick={() => setAnnotationTool('text')} className={`p-1.5 rounded ${annotationTool === 'text' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500'}`} title="Add text box"><Type size={15} /></button>
               <button type="button" onClick={() => setAnnotationTool('eraser')} className={`p-1.5 rounded ${annotationTool === 'eraser' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500'}`} title="Eraser"><Eraser size={15} /></button>
-              <input type="color" aria-label="Annotation color" value={annotationColor} onChange={(event) => setAnnotationColor(event.target.value)} className="h-6 w-6 cursor-pointer border-0 bg-transparent p-0" />
+              {annotationTool !== 'eraser' && <input type="color" aria-label="Annotation color" value={annotationColor} onChange={(event) => setAnnotationColors(current => ({ ...current, [annotationTool]: event.target.value }))} className="h-6 w-6 cursor-pointer border-0 bg-transparent p-0" />}
               {annotationTool === 'highlight' && <label className="flex items-center gap-1 text-xs text-slate-600" title="Highlighter width scales with the page"><span>Width</span><input type="range" aria-label="Highlighter width" min="5" max="80" step="5" value={highlightWidth} onChange={event => setHighlightWidth(Number(event.target.value))} className="w-20" /><output className="w-6">{highlightWidth}</output></label>}
+              {annotationTool === 'eraser' && <label className="flex items-center gap-1 text-xs text-slate-600"><span>Size</span><input type="range" aria-label="Eraser size" min="5" max="80" step="5" value={eraserWidth} onChange={event => setEraserWidth(Number(event.target.value))} className="w-20" /><output>{eraserWidth}</output></label>}
+              {annotationTool === 'text' && <label className="flex items-center gap-1 text-xs text-slate-600"><span>Font size</span><input type="number" aria-label="Annotation font size" min="8" max="72" value={textFontSize} onChange={event => setTextFontSize(Math.max(8, Math.min(72, Number(event.target.value) || 18)))} className="w-12 rounded border border-slate-200 bg-white px-1 py-1" /></label>}
               <button type="button" onClick={() => onAnnotationsChange(annotations.slice(0, -1))} disabled={annotations.length === 0} className="p-1.5 text-slate-500 disabled:opacity-25" title="Undo annotation"><Undo2 size={15} /></button>
               <button type="button" onClick={() => annotations.length > 0 && window.confirm('Clear annotations on this page?') && onAnnotationsChange([])} disabled={annotations.length === 0} className="p-1.5 text-slate-500 hover:text-red-600 disabled:opacity-25" title="Clear page annotations"><Trash2 size={15} /></button>
             </>
@@ -551,7 +573,7 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
               className="block"
             />
           </Document>
-          <AnnotationCanvas enabled={annotationEnabled} tool={annotationTool} color={annotationColor} highlightWidth={highlightWidth / 1000} strokes={annotations} onChange={onAnnotationsChange} />
+          <AnnotationCanvas enabled={annotationEnabled} tool={annotationTool} color={annotationColor} textFontSize={textFontSize / 1000} eraserWidth={eraserWidth / 1000} highlightWidth={highlightWidth / 1000} strokes={annotations} onChange={onAnnotationsChange} />
         </div>
         </div>
       </div>

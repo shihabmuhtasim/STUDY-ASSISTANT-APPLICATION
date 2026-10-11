@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { firestore } from './auth';
 import type { AIModelPreference, AnnotationStroke, PageNote, StudyDocument, StudyFolder } from '../types';
+import type { VoiceJob } from '../components/useVoiceNotes';
 
 export interface CloudDocumentMetadata {
   id: string;
@@ -126,6 +127,19 @@ export async function loadCloudWorkspace(userId: string, documentId: string) {
     if (Array.isArray(data.annotations)) annotations[pageNumber] = data.annotations;
   });
   return { notes, annotations };
+}
+
+export async function saveCloudVoiceJob(userId: string, documentId: string, job: VoiceJob) {
+  // Use the existing private pages collection; separate records avoid page-note write conflicts.
+  await setDoc(doc(firestore, 'users', userId, 'documents', documentId, 'pages', `voice-${job.id}`), {
+    voiceJob: clean(job), updatedAt: serverTimestamp(),
+  });
+}
+
+export async function loadCloudVoiceJobs(userId: string, documentId: string): Promise<VoiceJob[]> {
+  const snapshot = await getDocs(collection(firestore, 'users', userId, 'documents', documentId, 'pages'));
+  return snapshot.docs.map(item => item.data().voiceJob as VoiceJob | undefined)
+    .filter((job): job is VoiceJob => !!job && typeof job.id === 'string' && typeof job.transcript === 'string' && Array.isArray(job.parts));
 }
 
 export async function loadCloudPreferences(userId: string): Promise<CloudPreferences | null> {

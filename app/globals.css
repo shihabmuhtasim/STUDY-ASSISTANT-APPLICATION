@@ -1,5 +1,9 @@
 @import 'tailwindcss';
+@import 'katex/dist/katex.min.css';
 @plugin '@tailwindcss/typography';
+
+.katex-display { overflow-x: auto; overflow-y: hidden; padding: 0.4em 0; }
+.katex { color: inherit; }
 
 .react-pdf__Page__textContent .study-citation-highlight {
   background: rgba(250, 204, 21, 0.58) !important;

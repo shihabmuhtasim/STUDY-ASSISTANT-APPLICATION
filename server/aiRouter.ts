@@ -18,9 +18,9 @@ CRITICAL INSTRUCTIONS:
    - Follow the study scope and cite references [1] only when citing supplied document evidence. Do not cite external knowledge.
 
 2. CLEAN FORMATTING & SYMBOLS (MANDATORY):
-   - NEVER use raw LaTeX math dollar delimiters like $...$ or $$...$$. Never write "$s$" or "$x$" or "($s$)". Write "s", "x", "(s)" directly in plain text.
+   - Render equations using valid LaTeX enclosed in $...$ for inline math or $$...$$ for display math. Never emit bare LaTeX commands outside these delimiters.
    - For variables and parameters, write clean readable labels (e.g. write "**Stride (s):**" instead of "**Stride ($s$):**").
-   - For mathematical equations, write clean readable text (e.g. "output_size = (input_size - kernel_size + 2 * padding) / stride + 1").
+   - Explain every formula's variables in plain language. Use fractions, subscripts, and mathematical symbols when appropriate.
    - NEVER use triple asterisks (***). Use clean standard bold (**bold**) or italics (*italic*).
    - Use structured Markdown with short bold headings, clean bullet points, and steps.
    - Match the student's language.`;
