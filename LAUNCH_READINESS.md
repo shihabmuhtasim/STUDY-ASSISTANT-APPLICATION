@@ -35,7 +35,7 @@ Use isolated Firebase CLI/rules-unit-testing tools, Java 21 and a local-only Fir
 
 1. Rotate any API keys previously pasted into chat. Existing credentials were not printed or replaced. Credential creation/rotation requires the account owner to complete the sensitive step, followed by updating the backend secret.
 2. Confirm the deployed Firestore rules match the tested repository rules, and review Firebase/Google OAuth authorized domains and the Drive consent-screen production status.
-3. Confirm the exact Google project associated with the hosted key, then read its actual RPM, TPM and daily quotas in AI Studio. The current browser session exposed a different project; its numbers must not be attributed to production. No billing was enabled.
+3. Confirm the exact Google project associated with the hosted key, then read its actual RPM, TPM and daily quotas in AI Studio. The browser showed ai-studio-applet-webapp-3af43, but its relationship to the deployed key was not established; its numbers must not be attributed to production. No billing was enabled.
 4. Tune application safety caps against measured average context size and real provider quotas. Test a few real requests, including provider exhaustion and recovery, before increasing traffic. Separate estimated app allowance from actual provider token usage.
 5. Resolve or explicitly assess the remaining document-conversion advisories and development-tool advisories. Review custom-domain egress policy; for a stricter launch, use a verified provider-host allowlist or an egress proxy with DNS/IP controls.
 6. Review retention periods, manual account-deletion procedure, provider data terms and business/privacy notices for the intended launch regions. No blanket GDPR-compliance claim is made.
