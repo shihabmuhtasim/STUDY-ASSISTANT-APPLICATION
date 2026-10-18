@@ -94,8 +94,12 @@ export async function saveCloudFolders(userId: string, folders: StudyFolder[]) {
 
 export async function deleteCloudDocument(userId: string, documentId: string) {
   const pages = await getDocs(collection(firestore, 'users', userId, 'documents', documentId, 'pages'));
+  for (let offset = 0; offset < pages.docs.length; offset += 400) {
+    const chunk = writeBatch(firestore);
+    pages.docs.slice(offset, offset + 400).forEach(page => chunk.delete(page.ref));
+    await chunk.commit();
+  }
   const batch = writeBatch(firestore);
-  pages.forEach((page) => batch.delete(page.ref));
   batch.delete(doc(firestore, 'users', userId, 'documents', documentId));
   await batch.commit();
 }

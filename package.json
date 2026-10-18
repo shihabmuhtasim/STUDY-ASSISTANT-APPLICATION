@@ -19,7 +19,7 @@
     "@tailwindcss/typography": "^0.5.19",
     "clsx": "^2.1.1",
     "docx-renderer": "^0.2.2",
-    "dompurify": "^3.4.14",
+    "dompurify": "^3.4.16",
     "drizzle-orm": "0.45.2",
     "firebase": "^12.18.0",
     "html2canvas": "^1.4.1",
@@ -31,7 +31,7 @@
     "mammoth": "^1.12.1",
     "motion": "^12.23.24",
     "msdoc-viewer": "github:zheng2429/msdoc-viewer#main",
-    "next": "^16.3.3",
+    "next": "~16.3.8",
     "pdf-lib": "^1.17.1",
     "react": "19.2.6",
     "react-dom": "19.2.6",
@@ -48,6 +48,11 @@
     "unified": "^11.0.5",
     "uuid": "^13.0.1",
     "vite": "^6.2.0"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.13.6",
+    "katex": "$katex",
+    "postcss-selector-parser": "^7.1.6"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",

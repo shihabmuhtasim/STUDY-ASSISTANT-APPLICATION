@@ -29,7 +29,7 @@ export async function ensureUser(user: VerifiedFirebaseUser) {
   await ensureDatabaseSchema();
   const db = getDb();
   const now = Date.now();
-  const isAdmin = adminEmails().has(user.email.toLowerCase());
+  const isAdmin = user.emailVerified === true && adminEmails().has(user.email.toLowerCase());
 
   await db.insert(users).values({
     id: user.uid,
@@ -44,7 +44,8 @@ export async function ensureUser(user: VerifiedFirebaseUser) {
     set: {
       email: user.email,
       displayName: user.displayName,
-      ...(isAdmin ? { plan: 'pro' as const, role: 'admin' as const } : {}),
+      role: isAdmin ? 'admin' as const : 'user' as const,
+      ...(isAdmin ? { plan: 'pro' as const } : {}),
       lastSeenAt: now,
     },
   });
@@ -81,10 +82,12 @@ export async function getAccountSummary(user: VerifiedFirebaseUser) {
 
 export async function reserveAIAllowance(user: VerifiedFirebaseUser, units: number) {
   const account = await getAccountSummary(user);
+  const requestedUnits = Math.max(1, Math.ceil(units));
+  if (!Number.isFinite(requestedUnits) || (account.role !== 'admin' && requestedUnits > account.aiRemaining)) return { allowed: false, account, reservedUnits: 0, remaining: account.aiRemaining };
   if (account.role === 'admin') {
     return { allowed: true, account, reservedUnits: 0, remaining: account.aiRemaining };
   }
-  const reservedUnits = Math.max(1, Math.min(Math.ceil(units), account.aiRemaining));
+  const reservedUnits = requestedUnits;
   const result = await env.DB.prepare(`
     INSERT INTO ai_usage_counters (user_id, period, used, updated_at)
     VALUES (?, ?, ?, ?)

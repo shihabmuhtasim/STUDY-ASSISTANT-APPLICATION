@@ -75,7 +75,7 @@ export async function askCustomAI(input: CustomAIInput) {
       ...(input.connection.isStored ? { connectionId: input.connection.id } : { transientConnection: input.connection }),
       prompt: input.prompt,
       pageNumber: input.pageNumber,
-      pageText: input.pageText,
+      pageText: input.pageText.slice(0, 12_000),
       documentContext: input.documentContext,
       scope: input.scope || 'page',
       referencesEnabled: input.referencesEnabled === true,

@@ -1,4 +1,5 @@
-import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { transform } from 'esbuild';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,7 +15,10 @@ await rm(outputDir, { recursive: true, force: true });
 await mkdir(join(outputDir, '_server'), { recursive: true });
 await cp(clientDir, outputDir, { recursive: true });
 await cp(serverDir, join(outputDir, '_server'), { recursive: true });
+const security = await transform(await readFile(join(root, 'server/securityHeaders.ts'), 'utf8'), { loader: 'ts', format: 'esm' });
+await writeFile(join(outputDir, '_security.js'), security.code);
 await writeFile(join(outputDir, '_worker.js'), `import app from './_server/index.js';
+import { secureResponse } from './_security.js';
 
 export default {
   async fetch(request, env, context) {
@@ -25,10 +29,11 @@ export default {
 
     if (isStaticAsset && env.ASSETS) {
       const response = await env.ASSETS.fetch(request);
-      if (response.status !== 404) return response;
+      if (response.status !== 404) return secureResponse(request, response);
     }
 
-    return app.fetch(request, env, context);
+    try { return secureResponse(request, await app.fetch(request, env, context)); }
+    catch { return secureResponse(request, Response.json({ error: 'The service is temporarily unavailable. Please retry shortly.' }, { status: 503 })); }
   },
 };
 `);

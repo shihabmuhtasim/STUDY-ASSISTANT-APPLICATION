@@ -4,6 +4,9 @@ import type { AIInteraction, CustomAIConnection } from '../../../../src/types';
 import { verifyFirebaseRequest } from '../../../../server/firebaseUser';
 import { connectionWithDecryptedKey } from '../../../../server/userConnections';
 import { callCustomProvider } from '../../../../server/customProvider';
+import { readJSON, validateStudyInput, inputErrorResponse, safeProviderError } from '../../../../server/requestSecurity';
+import { validConnection } from '../../../../server/connectionInput';
+import { acquireAIRequest, capacityBusyResponse } from '../../../../server/aiCapacity';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +28,11 @@ interface RequestBody {
 export async function POST(request: Request) {
   const user = await verifyFirebaseRequest(request);
   if (!user) return NextResponse.json({ error: 'Sign in again to use your AI connection.' }, { status: 401 });
-  const body = await request.json().catch(() => null) as RequestBody | null;
+  let body: RequestBody;
+  try { const parsed = await readJSON(request); validateStudyInput(parsed, true); body = parsed as RequestBody; }
+  catch (error) { return inputErrorResponse(error); }
+  if (body.connectionId !== undefined && (typeof body.connectionId !== 'string' || !/^[a-zA-Z0-9_-]{6,80}$/.test(body.connectionId))) return NextResponse.json({ error: 'Invalid connection.' }, { status: 400 });
+  if (body.transientConnection !== undefined && !validConnection(body.transientConnection)) return NextResponse.json({ error: 'Enter a valid AI connection and public HTTPS endpoint.' }, { status: 400 });
   if (!body?.prompt?.trim() || body.prompt.length > 24_000 || !Number.isInteger(body.pageNumber) || (body.pageNumber || 0) < 1) return NextResponse.json({ error: 'Enter a valid question.' }, { status: 400 });
   if (body.pageImage && body.pageImage.length > 4_000_000) return NextResponse.json({ error: 'The page image is too large.' }, { status: 413 });
   if (body.documentContext && body.documentContext.length > 52_000) return NextResponse.json({ error: 'The study context is too large. Choose fewer pages.' }, { status: 413 });
@@ -35,6 +42,8 @@ export async function POST(request: Request) {
   if (body.connectionId) connection = await connectionWithDecryptedKey(user, body.connectionId);
   else if (body.transientConnection?.apiKey) connection = body.transientConnection;
   if (!connection) return NextResponse.json({ error: 'The selected AI connection was not found.' }, { status: 404 });
+  const releaseCapacity = await acquireAIRequest(user.uid, 'custom');
+  if (!releaseCapacity) return capacityBusyResponse();
 
   try {
     const result = await callCustomProvider({
@@ -53,6 +62,6 @@ export async function POST(request: Request) {
     return NextResponse.json(result, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'The provider could not answer.';
-    return NextResponse.json({ error: message.slice(0, 400) }, { status: 502 });
-  }
+    return NextResponse.json({ error: safeProviderError(message, connection.apiKey) }, { status: 502 });
+  } finally { await releaseCapacity().catch(() => undefined); }
 }

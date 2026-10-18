@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server';
+import { verifyFirebaseRequest } from '../../../../server/firebaseUser';
+import { readJSON, inputErrorResponse, safeProviderError } from '../../../../server/requestSecurity';
+import { acquireAIRequest, capacityBusyResponse } from '../../../../server/aiCapacity';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,17 +16,17 @@ function isSameOrigin(request: Request) {
 
 export async function POST(request: Request) {
   if (!isSameOrigin(request)) return NextResponse.json({ error: 'This request must come from NoteMyDoc AI.' }, { status: 403 });
+  const user = await verifyFirebaseRequest(request);
+  if (!user) return NextResponse.json({ error: 'Sign in to use your AI connection.' }, { status: 401 });
 
   const apiKey = request.headers.get('x-nvidia-api-key')?.trim();
   if (!apiKey || apiKey.length > 1_024) return NextResponse.json({ error: 'Enter a valid NVIDIA API key.' }, { status: 401 });
 
   let body: { model?: unknown; messages?: unknown; max_tokens?: unknown; temperature?: unknown };
   try {
-    const payload = await request.text();
-    if (payload.length > MAX_REQUEST_BYTES) return NextResponse.json({ error: 'The page context is too large for this model request.' }, { status: 413 });
-    body = JSON.parse(payload) as typeof body;
-  } catch {
-    return NextResponse.json({ error: 'Invalid NVIDIA request.' }, { status: 400 });
+    body = await readJSON(request, MAX_REQUEST_BYTES);
+  } catch (error) {
+    return inputErrorResponse(error);
   }
 
   const model = typeof body.model === 'string' ? body.model.trim() : '';
@@ -31,6 +34,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Enter a valid NVIDIA model ID.' }, { status: 400 });
   }
 
+  const releaseCapacity = await acquireAIRequest(user.uid, 'custom');
+  if (!releaseCapacity) return capacityBusyResponse();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
   try {
@@ -45,7 +50,9 @@ export async function POST(request: Request) {
       }),
       signal: controller.signal,
     });
-    const payload = await response.text();
+    const raw = await response.text();
+    if (!response.ok) return NextResponse.json({ error: safeProviderError(raw, apiKey) }, { status: response.status });
+    const payload = raw;
     return new Response(payload, {
       status: response.status,
       headers: { 'content-type': response.headers.get('content-type') || 'application/json', 'cache-control': 'no-store' },
@@ -55,5 +62,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: timedOut ? 'NVIDIA took too long to respond.' : 'NVIDIA could not be reached by the NoteMyDoc AI service.' }, { status: 502 });
   } finally {
     clearTimeout(timeout);
+    await releaseCapacity().catch(() => undefined);
   }
 }

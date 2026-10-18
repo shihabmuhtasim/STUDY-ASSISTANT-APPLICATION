@@ -9,5 +9,8 @@ declare namespace Cloudflare {
     GEMINI_MODELS?: string;
     USER_DATA_ENCRYPTION_KEY?: string;
     ADMIN_EMAILS?: string;
+    AI_USER_RPM?: string;
+    AI_HOSTED_RPM?: string;
+    AI_HOSTED_CONCURRENCY?: string;
   }
 }

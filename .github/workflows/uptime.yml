@@ -11,4 +11,4 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check production health
-        run: curl --fail --show-error --silent --retry 2 --max-time 20 https://ai-pdf-study-assistant.pages.dev/api/health
+        run: curl --fail --show-error --silent --retry 2 --max-time 20 https://notemydocai.pages.dev/api/health

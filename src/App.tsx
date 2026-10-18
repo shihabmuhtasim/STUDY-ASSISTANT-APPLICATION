@@ -41,7 +41,7 @@ export default function App({ initialAccount }: AppProps) {
   const [currentDocument, setCurrentDocument] = useState<StudyDocument | null>(null);
   const [account, setAccount] = useState<AccountSummary | AccountIdentity | null>(initialAccount);
   const [storageError, setStorageError] = useState<string | null>(null);
-  const [infoView, setInfoView] = useState<'plans' | 'contact' | null>(null);
+  const [infoView, setInfoView] = useState<'plans' | 'contact' | 'privacy' | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [driveToken, setDriveToken] = useState<string | null>(null);
   const [driveLinked, setDriveLinked] = useState(false);
@@ -440,6 +440,7 @@ export default function App({ initialAccount }: AppProps) {
         onLibrary={handleOpenLibrary}
         onPlans={() => setInfoView('plans')}
         onContact={() => setInfoView('contact')}
+        onPrivacy={() => setInfoView('privacy')}
         onAuth={() => setAuthOpen(true)}
         onSignOut={() => { signOutAccount().catch(() => undefined); clearDriveSession(); setAccount(null); setDocuments([]); setFolders([]); setDriveToken(null); setDriveLinked(false); cloudLoadedFor.current = null; driveSyncedFor.current = null; }}
       />}

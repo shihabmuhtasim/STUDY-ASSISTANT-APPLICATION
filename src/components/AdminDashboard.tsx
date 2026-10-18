@@ -5,6 +5,7 @@ import { Activity, ArrowLeft, Bot, Gauge, PauseCircle, PlayCircle, RefreshCw, Ro
 import { firebaseAuth, subscribeToAccount } from '../services/auth';
 
 type AdminOverview = {
+  capacity?: { perUserPerMinute: number; hostedPerMinute: number; perUserConcurrent: number; hostedConcurrent: number; customConcurrent: number; activeHosted: number; activeCustom: number };
   summary: {
     users: number;
     freeUsers: number;
@@ -128,6 +129,7 @@ export function AdminDashboard() {
         {metrics.map(({ label, value, note, icon: Icon }) => <div key={label} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><p className="text-sm font-medium text-slate-500">{label}</p><Icon size={18} className="text-indigo-600" /></div><p className="mt-3 text-2xl font-semibold text-slate-950">{value}</p><p className="mt-1 text-xs text-slate-500">{note}</p></div>)}
       </section>
 
+      {overview.capacity && <section className="mt-6 border-y border-slate-200 py-4 text-sm text-slate-600" aria-label="AI capacity safeguards"><h2 className="font-semibold text-slate-900">AI capacity safeguards</h2><p className="mt-2">Hosted requests running: {overview.capacity.activeHosted}/{overview.capacity.hostedConcurrent} · Custom requests: {overview.capacity.activeCustom}/{overview.capacity.customConcurrent}</p><p className="mt-1">Up to {overview.capacity.perUserPerMinute} requests/minute per user, {overview.capacity.perUserConcurrent} running at once; hosted service cap {overview.capacity.hostedPerMinute}/minute.</p><p className="mt-2 text-xs text-slate-500">These are application safety limits, not guaranteed provider capacity. Check actual Gemini quotas in Google AI Studio.</p><a className="mt-2 inline-block text-indigo-700 underline" href="https://aistudio.google.com/usage" target="_blank" rel="noreferrer">Google AI Studio usage</a></section>}
       <div className="mt-7 grid gap-6 xl:grid-cols-[1.25fr_.75fr]">
         <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4"><div><h2 className="font-semibold text-slate-950">User access</h2><p className="text-xs text-slate-500">The 100 most recently active accounts</p></div><label className="relative"><Search className="absolute left-3 top-2.5 text-slate-400" size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search users" className="h-9 w-56 rounded-md border border-slate-200 pl-9 pr-3 text-sm" /></label></div>

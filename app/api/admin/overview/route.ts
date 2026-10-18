@@ -2,12 +2,13 @@ import { NextResponse } from 'next/server';
 import { getAccountSummary } from '../../../../server/accounts';
 import { getAdminOverview, resetUserUsage, updateHostedAIPause, updateModelControl, updateUserPlan } from '../../../../server/admin';
 import { verifyFirebaseRequest } from '../../../../server/firebaseUser';
+import { readJSON, inputErrorResponse } from '../../../../server/requestSecurity';
 
 export const dynamic = 'force-dynamic';
 
 async function adminUser(request: Request) {
   const user = await verifyFirebaseRequest(request);
-  if (!user) return null;
+  if (!user || !user.emailVerified) return null;
   const account = await getAccountSummary(user);
   return account.role === 'admin' ? user : null;
 }
@@ -21,7 +22,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await adminUser(request);
   if (!user) return NextResponse.json({ error: 'Administrator access is required.' }, { status: 403 });
-  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  let body: Record<string, unknown>;
+  try { body = await readJSON(request, 16_000); } catch (error) { return inputErrorResponse(error); }
   try {
     if (body?.action === 'user-plan' && typeof body.userId === 'string' && (body.plan === 'free' || body.plan === 'pro')) await updateUserPlan(user, body.userId, body.plan);
     else if (body?.action === 'reset-usage' && typeof body.userId === 'string') await resetUserUsage(user, body.userId);

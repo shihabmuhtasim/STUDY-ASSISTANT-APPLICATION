@@ -3,6 +3,7 @@ import { ensureDatabaseSchema } from '../db/init';
 import { FREE_MONTHLY_AI_LIMIT, PRO_MONTHLY_AI_LIMIT, remainingPercentage } from './aiUsage';
 import { clearAIControlCache } from './modelControls';
 import type { VerifiedFirebaseUser } from './firebaseUser';
+import { capacityLimits } from './aiCapacity';
 
 const MANAGED_MODELS = [
   { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash', provider: 'Gemini' },
@@ -49,7 +50,9 @@ export async function getAdminOverview() {
     env.DB.prepare('SELECT action, target, details, created_at createdAt FROM admin_audit_events ORDER BY created_at DESC LIMIT 20').all<{ action: string; target: string; details: string | null; createdAt: number }>(),
   ]);
   const enabledByModel = new Map((controls.results || []).map((row) => [row.model, row.enabled !== 0]));
+  const leases = await env.DB.prepare('SELECT channel, COUNT(*) active FROM ai_request_leases WHERE expires_at > ? GROUP BY channel').bind(now).all<{ channel: string; active: number }>();
   return {
+    capacity: { ...capacityLimits(), activeHosted: leases.results?.find(row => row.channel === 'hosted')?.active || 0, activeCustom: leases.results?.find(row => row.channel === 'custom')?.active || 0 },
     summary: {
       users: Number(totals?.total) || 0,
       freeUsers: Number(totals?.free) || 0,

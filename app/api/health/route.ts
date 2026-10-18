@@ -13,6 +13,7 @@ export async function GET() {
       status: 'ok',
       database: 'available',
       hostedAI: env.AI || env.GEMINI_API_KEY ? 'available' : 'unconfigured',
+      aiCheck: 'configuration-only',
       responseTimeMs: Date.now() - startedAt,
     }, { headers: { 'cache-control': 'no-store' } });
   } catch {

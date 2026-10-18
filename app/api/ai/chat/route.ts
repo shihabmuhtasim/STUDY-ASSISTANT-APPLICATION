@@ -4,6 +4,8 @@ import { routeAIRequest, type AIRequest } from '../../../../server/aiRouter';
 import { getAccountSummary, recordAIRequestEvent, recordAIUsage, releaseAIAllowance, reserveAIAllowance, settleAIAllowance } from '../../../../server/accounts';
 import { verifyFirebaseRequest } from '../../../../server/firebaseUser';
 import { FREE_AI_MODEL, estimateAIUsageUnits, remainingPercentage } from '../../../../server/aiUsage';
+import { readJSON, validateStudyInput, inputErrorResponse } from '../../../../server/requestSecurity';
+import { acquireAIRequest, capacityBusyResponse } from '../../../../server/aiCapacity';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,8 +14,8 @@ export async function POST(request: Request) {
   const user = await verifyFirebaseRequest(request);
   if (!user) return NextResponse.json({ error: 'Sign in again to use the AI assistant.', code: 'AUTH_REQUIRED' }, { status: 401 });
   let body: AIRequest & { purpose?: string };
-  try { body = await request.json() as AIRequest; }
-  catch { return NextResponse.json({ error: 'Invalid request.' }, { status: 400 }); }
+  try { const parsed = await readJSON(request); validateStudyInput(parsed); body = parsed as AIRequest & { purpose?: string }; }
+  catch (error) { return inputErrorResponse(error); }
 
   const prompt = body.prompt?.trim();
   const isVoice = body.purpose === 'voice-notes';
@@ -48,10 +50,13 @@ export async function POST(request: Request) {
     outputCharacters: hasProAccess ? 12_000 : 2_800,
     hasImage: imageCount > 0,
   });
-  const allowance = await reserveAIAllowance(user, reservedUnits);
+  const releaseCapacity = await acquireAIRequest(user.uid, 'hosted');
+  if (!releaseCapacity) return capacityBusyResponse();
+  const allowance = await reserveAIAllowance(user, reservedUnits).catch(async error => { await releaseCapacity().catch(() => undefined); throw error; });
   if (!allowance.allowed) {
+    await releaseCapacity().catch(() => undefined);
     return NextResponse.json({
-      error: 'Your AI usage is at 0% for this month. It resets automatically next month.',
+      error: allowance.remaining > 0 ? 'This request is larger than your remaining AI allowance. Try a shorter question or less context.' : 'Your AI usage is at 0% for this month. It resets automatically next month.',
       code: 'AI_LIMIT_REACHED',
       remaining: allowance.remaining,
       remainingPercent: remainingPercentage(allowance.account.aiLimit, allowance.remaining),
@@ -121,5 +126,5 @@ export async function POST(request: Request) {
     }).catch((eventError) => console.error('Failed to record AI request error', eventError));
     console.error('AI request failed', error);
     return NextResponse.json({ error: code === 'GEMINI_401' || code === 'GEMINI_403' ? 'Gemini rejected the hosted API credential. The site administrator needs to check its key and permissions. Enable auto fallback to use another available model.' : code === 'VISION_MODEL_REQUIRED' ? 'The selected model cannot read images. Choose Gemini/Gemma or enable auto fallback.' : code === 'VISION_UNAVAILABLE' ? 'Image-capable AI is temporarily unavailable. Your images were not sent to a text-only model. Please retry shortly.' : 'The assistant could not process this page. Try the question again.', code }, { status: 503 });
-  }
+  } finally { await releaseCapacity().catch(() => undefined); }
 }

@@ -10,11 +10,12 @@ interface SiteNavigationProps {
   onLibrary: () => void;
   onPlans: () => void;
   onContact: () => void;
+  onPrivacy?: () => void;
   onAuth: () => void;
   onSignOut: () => void;
 }
 
-export function SiteNavigation({ account, theme, onThemeToggle, isLibraryActive, onLibrary, onPlans, onContact, onAuth, onSignOut }: SiteNavigationProps) {
+export function SiteNavigation({ account, theme, onThemeToggle, isLibraryActive, onLibrary, onPlans, onContact, onPrivacy, onAuth, onSignOut }: SiteNavigationProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -44,6 +45,7 @@ export function SiteNavigation({ account, theme, onThemeToggle, isLibraryActive,
           <button type="button" onClick={onLibrary} aria-current={isLibraryActive ? 'page' : undefined} className={`flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition ${isLibraryActive ? 'bg-[#f1f1ee] text-[#171717]' : 'text-slate-600 hover:bg-[#f7f7f5] hover:text-slate-950'}`}><FolderOpen size={15} />Library</button>
           <button type="button" onClick={onPlans} className="flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-950"><Tag size={15} />Plans</button>
           <button type="button" onClick={onContact} className="flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-950"><Mail size={15} />Contact</button>
+          {onPrivacy && <button type="button" onClick={onPrivacy} className="flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-950"><ShieldCheck size={15} />Privacy</button>}
         </nav>
 
         <div className="hidden items-center gap-2 md:flex">
@@ -91,6 +93,7 @@ export function SiteNavigation({ account, theme, onThemeToggle, isLibraryActive,
         <button type="button" onClick={() => run(onLibrary)} className="block w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">Library</button>
         <button type="button" onClick={() => run(onPlans)} className="block w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">Plans</button>
         <button type="button" onClick={() => run(onContact)} className="block w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">Contact</button>
+        {onPrivacy && <button type="button" onClick={() => run(onPrivacy)} className="block w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">Privacy</button>}
         <div className="my-2 h-px bg-slate-200" />
         {account ? <><p className="px-3 pt-2 text-xs font-semibold uppercase text-slate-500">{accessLabel} account</p><p className="truncate px-3 py-1 text-sm font-medium text-slate-900">{account.displayName}</p><p className="truncate px-3 pb-2 text-xs text-slate-500">{account.email}</p>{isAdmin && <a href="/admin" className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm font-medium text-indigo-700 hover:bg-indigo-50"><ShieldCheck size={16} />Admin workspace</a>}<button type="button" onClick={() => run(onSignOut)} className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm font-medium text-red-700 hover:bg-red-50"><LogOut size={16} />Sign out</button></> : <button type="button" onClick={() => run(onAuth)} className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white"><Sparkles size={16} />Sign in or create account</button>}
       </nav>}

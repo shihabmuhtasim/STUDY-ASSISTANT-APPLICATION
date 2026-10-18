@@ -1,4 +1,5 @@
 import type { AIInteraction, CustomAIConnection } from '../src/types';
+import { publicProviderEndpoint } from './requestSecurity';
 
 const SYSTEM_PROMPT = `You are an expert, versatile AI study assistant and tutor. Your mission is to help the student learn and answer EVERY question thoroughly and accurately.
 
@@ -55,12 +56,27 @@ async function providerFetch(url: string, init: RequestInit, timeoutMs = 60_000)
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    const response = await fetch(url, { ...init, redirect: 'manual', signal: controller.signal });
+    if (response.status >= 300 && response.status < 400) { await response.body?.cancel(); throw new Error('The provider redirected the request. Use its final HTTPS API endpoint.'); }
+    if (!response.body) { clearTimeout(timeout); return response; }
+    const reader = response.body.getReader(); let bytes = 0;
+    const body = new ReadableStream<Uint8Array>({
+      async pull(stream) {
+        try {
+          const { value, done } = await reader.read();
+          if (done) { clearTimeout(timeout); stream.close(); return; }
+          bytes += value.byteLength;
+          if (bytes > 2_000_000) { await reader.cancel(); throw new Error('The provider response was too large.'); }
+          stream.enqueue(value);
+        } catch (error) { clearTimeout(timeout); stream.error(error); }
+      },
+      async cancel() { clearTimeout(timeout); controller.abort(); await reader.cancel().catch(() => undefined); },
+    });
+    return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
   } catch (error) {
+    clearTimeout(timeout);
     if (error instanceof Error && error.name === 'AbortError') throw new Error(`The provider did not respond within ${Math.round(timeoutMs / 1_000)} seconds.`);
     throw error;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -74,11 +90,7 @@ async function errorMessage(response: Response) {
 }
 
 function safeEndpoint(baseUrl: string) {
-  const url = new URL(baseUrl);
-  const host = url.hostname.toLowerCase();
-  if (url.protocol !== 'https:' || host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host.endsWith('.local')) throw new Error('Enter a public HTTPS API endpoint.');
-  const normalized = baseUrl.replace(/\/+$/, '');
-  return normalized.endsWith('/chat/completions') ? normalized : `${normalized}/chat/completions`;
+  return publicProviderEndpoint(baseUrl);
 }
 
 async function openAICompatible(input: CustomProviderInput, promptContext: string) {
@@ -104,7 +116,7 @@ async function openAICompatible(input: CustomProviderInput, promptContext: strin
       stream: false,
     }),
   }, 60_000);
-  if (response.status === 202) throw new Error('The provider queued the request instead of answering. Try the test again shortly.');
+  if (response.status === 202) { await response.body?.cancel(); throw new Error('The provider queued the request instead of answering. Try the test again shortly.'); }
   if (!response.ok) throw new Error(await errorMessage(response));
   const data = await response.json() as { choices?: Array<{ message?: { content?: string | Array<{ text?: string }>; reasoning?: string; reasoning_content?: string } }> };
   const content = data.choices?.[0]?.message?.content;
@@ -132,7 +144,7 @@ async function nvidia(input: CustomProviderInput, promptContext: string) {
       stream: true,
     }),
   }, 60_000);
-  if (response.status === 202) throw new Error('NVIDIA queued this request. Try again shortly or select a faster NVIDIA model.');
+  if (response.status === 202) { await response.body?.cancel(); throw new Error('NVIDIA queued this request. Try again shortly or select a faster NVIDIA model.'); }
   if (!response.ok) {
     const providerError = await errorMessage(response);
     const message = response.status === 401

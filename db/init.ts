@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers';
+import { capacitySchema } from '../server/capacitySQL';
 
 let initializationPromise: Promise<void> | null = null;
 
@@ -6,6 +7,7 @@ export function ensureDatabaseSchema(): Promise<void> {
   if (!initializationPromise) {
     const db = env.DB;
     initializationPromise = db.batch([
+      ...capacitySchema.map(sql => db.prepare(sql)),
       db.prepare(`
         CREATE TABLE IF NOT EXISTS users (
           id TEXT PRIMARY KEY NOT NULL,
@@ -99,7 +101,7 @@ export function ensureDatabaseSchema(): Promise<void> {
           FOREIGN KEY (admin_user_id) REFERENCES users(id) ON DELETE CASCADE
         )
       `),
-    ]).then(() => undefined);
+    ]).then(() => undefined).catch(error => { initializationPromise = null; throw error; });
   }
   return initializationPromise;
 }
