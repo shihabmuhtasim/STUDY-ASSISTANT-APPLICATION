@@ -30,3 +30,21 @@ export function shiftPageData(notes: Record<number, PageNote>, annotations: Reco
     annotations: Object.fromEntries(Object.entries(annotations).map(([key, value]) => [shift(Number(key)), value])) as Record<number, AnnotationStroke[]>,
   };
 }
+
+export async function deletePdfPage(source: Blob | string, pageNumber: number) {
+  const data = source instanceof Blob ? await source.arrayBuffer() : await (await fetch(source)).arrayBuffer();
+  const pdf = await PDFDocument.load(data);
+  if (pdf.getPageCount() <= 1) throw new Error('Keep at least one page in the document.');
+  if (!Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > pdf.getPageCount()) throw new Error('Choose a valid page first.');
+  pdf.removePage(pageNumber - 1);
+  const bytes = await pdf.save();
+  return { blob: new Blob([new Uint8Array(bytes).buffer], { type: 'application/pdf' }), totalPages: pdf.getPageCount() };
+}
+
+export function removePageData(notes: Record<number, PageNote>, annotations: Record<number, AnnotationStroke[]>, page: number, documentId: string) {
+  const keptNotes = Object.fromEntries(Object.entries(notes).filter(([key]) => Number(key) !== page).map(([key, note]) => [key, {
+    ...note, aiHistory: note.aiHistory.map(chat => ({ ...chat, references: chat.references?.filter(ref => ref.pageNumber !== page) })),
+  }])) as Record<number, PageNote>;
+  const keptAnnotations = Object.fromEntries(Object.entries(annotations).filter(([key]) => Number(key) !== page));
+  return shiftPageData(keptNotes, keptAnnotations, page, -1, documentId);
+}

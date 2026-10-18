@@ -9,16 +9,17 @@ import { AIAssistant } from './AIAssistant';
 import type { StudyMaterial } from '../utils/studyMaterials';
 import { AccountIdentity, AccountSummary, StudyDocument, PageNote, AIInteraction, NoteBlock, AnnotationStroke, AISourceReference, PDFCitationTarget } from '../types';
 import { v4 as uuidv4 } from 'uuid';
-import { ArrowLeft, ChevronLeft, ChevronRight, Download, BookOpen, GripVertical, GripHorizontal, FileText, Sparkles, LayoutGrid, Eye, Files, Maximize2, Mic, Minimize2, Plus, SlidersHorizontal, Wrench } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Download, BookOpen, GripVertical, GripHorizontal, FileText, Sparkles, LayoutGrid, Eye, Files, Maximize2, Mic, Minimize2, Plus, SlidersHorizontal, Wrench } from 'lucide-react';
 import { get, set } from 'idb-keyval';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { exportNotesOnlyPDF, exportStudyPackPDF, richContentToStructuredText } from '../utils/pdfExport';
 import { markdownToRichTextHtml, toRichTextHtml } from './RichTextEditor';
-import { loadCloudWorkspace, saveCloudPage } from '../services/cloudData';
-import { insertPdfPages, shiftPageData } from '../utils/pdfPages';
+import { loadCloudWorkspace, saveCloudPage, saveCloudVoiceJob } from '../services/cloudData';
+import { deletePdfPage, insertPdfPages, removePageData, shiftPageData } from '../utils/pdfPages';
 
 interface StudyInterfaceProps {
-  onCreateEditedDocument: (document: StudyDocument) => Promise<void>;
+  onCreateEditedDocument: (document: StudyDocument, initialPage?: number) => Promise<void>;
+  initialPage?: number;
   document: StudyDocument;
   onBack: () => void;
   account: AccountSummary | AccountIdentity | null;
@@ -28,11 +29,11 @@ interface StudyInterfaceProps {
   onUpgrade: () => void;
 }
 
-export function StudyInterface({ document, onBack, account, onAccountChange, onUpdateDocument, onStudyModeChange, onUpgrade, onCreateEditedDocument }: StudyInterfaceProps) {
+export function StudyInterface({ document, initialPage = 1, onBack, account, onAccountChange, onUpdateDocument, onStudyModeChange, onUpgrade, onCreateEditedDocument }: StudyInterfaceProps) {
   const [inserting, setInserting] = useState(false);
   const insertLock = useRef(false);
   const isNotebook = document.kind === 'notebook';
-  const [pageNumber, setPageNumber] = useState(1);
+  const [pageNumber, setPageNumber] = useState(() => Math.max(1, Math.min(initialPage, document.totalPages || 1)));
   const [pageImage, setPageImage] = useState<string | null>(null);
   const [pageText, setPageText] = useState('');
   const [documentContext, setDocumentContext] = useState('');
@@ -50,6 +51,8 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
   const [citationTarget, setCitationTarget] = useState<PDFCitationTarget | null>(null);
   const [studyMode, setStudyMode] = useState(false);
   const [studyControlsOpen, setStudyControlsOpen] = useState(false);
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const [tabsCollapsed, setTabsCollapsed] = useState(false);
   const notesRef = useRef(notes);
   const modifiedPages = useRef(new Set<number>());
   const [voiceOpen, setVoiceOpen] = useState(false);
@@ -332,32 +335,38 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
     if (layoutMode === 'tabs') setActiveTab(isNotebook ? 'notes' : 'pdf');
   };
 
-  const handleInsertPages = async (file?: File) => {
-    if (insertLock.current || !isNotesLoaded || !areAnnotationsLoaded) return;
-    if (voice.session.phase !== 'idle' || voicePending) { window.alert('Finish recording and save or resolve pending voice notes before inserting pages.'); return; }
+  const handleEditPages = async (action: 'insert' | 'delete', file?: File) => {
+    if (insertLock.current || !isNotesLoaded || !areAnnotationsLoaded || !voice.ready) return;
+    if (voice.session.phase !== 'idle' || voicePending) { window.alert('Finish recording and save or resolve pending voice notes before changing pages.'); return; }
+    if (action === 'delete' && !window.confirm(`Remove page ${pageNumber} and its notes from an edited copy? Your original document will remain unchanged.`)) return;
     insertLock.current = true;
     setInserting(true);
     try {
       window.dispatchEvent(new Event('study-flush-notes'));
-      const result = await insertPdfPages(document.fileData, pageNumber, file);
+      const result = action === 'delete' ? await deletePdfPage(document.fileData, pageNumber) : await insertPdfPages(document.fileData, pageNumber, file);
       const id = uuidv4();
-      const shifted = shiftPageData(notesRef.current, annotations, pageNumber, result.added, id);
+      const added = 'added' in result && typeof result.added === 'number' ? result.added : 0;
+      const shifted = action === 'delete' ? removePageData(notesRef.current, annotations, pageNumber, id) : shiftPageData(notesRef.current, annotations, pageNumber, added, id);
+      const voiceJobs = voice.jobs.filter(job => action !== 'delete' || job.pageNumber !== pageNumber).map(job => ({ ...job, pageNumber: job.pageNumber > pageNumber ? job.pageNumber + (action === 'delete' ? -1 : added) : job.pageNumber }));
       await set(`notes_${id}`, shifted.notes);
       await set(`annotations_${id}`, shifted.annotations);
+      await set(`voice-notes:${account?.userId || 'guest'}:${id}`, voiceJobs);
       if (account) {
+        for (const job of voiceJobs) await saveCloudVoiceJob(account.userId, id, job);
         const pages = new Set([...Object.keys(shifted.notes), ...Object.keys(shifted.annotations)]);
         for (const key of pages) {
           const page = Number(key);
           await saveCloudPage(account.userId, id, page, shifted.notes[page] || { id: uuidv4(), documentId: id, pageNumber: page, content: '', blocks: [], aiHistory: [] }, shifted.annotations[page] || []);
         }
       }
-      await onCreateEditedDocument({ ...document, id, title: `${document.title} (edited)`, fileData: result.blob, totalPages: result.totalPages, driveFileId: undefined, sourceFormat: 'pdf', originalFileName: `${document.title} (edited).pdf`, mimeType: 'application/pdf', fileSize: result.blob.size, cloudStatus: 'local', createdAt: Date.now(), updatedAt: Date.now() });
-    } catch (error) { window.alert(`Could not insert pages: ${error instanceof Error ? error.message : 'Please try again.'}`); }
+      await onCreateEditedDocument({ ...document, id, title: `${document.title} (edited)`, fileData: result.blob, totalPages: result.totalPages, driveFileId: undefined, sourceFormat: 'pdf', originalFileName: `${document.title} (edited).pdf`, mimeType: 'application/pdf', fileSize: result.blob.size, cloudStatus: 'local', createdAt: Date.now(), updatedAt: Date.now() }, Math.min(pageNumber + (action === 'insert' ? 1 : 0), result.totalPages));
+    } catch (error) { window.alert(`Could not change pages: ${error instanceof Error ? error.message : 'Please try again.'}`); }
     finally { insertLock.current = false; setInserting(false); }
   };
 
   const pdfViewerProps = {
-    onInsertPages: handleInsertPages,
+    onInsertPages: (file?: File) => handleEditPages('insert', file),
+    onDeletePage: () => handleEditPages('delete'),
     file: document.fileData,
     pageNumber,
     setPageNumber,
@@ -450,12 +459,13 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-slate-50 font-sans">
-      {inserting && <div role="status" className="absolute inset-0 z-[100] flex items-center justify-center bg-white/90 text-slate-800">Inserting pages and saving your edited copy...</div>}
+      {inserting && <div role="status" className="absolute inset-0 z-[100] flex items-center justify-center bg-white/90 text-slate-800">Updating pages and saving your edited copy...</div>}
       {studyMode && !studyControlsOpen && (
         <button type="button" onClick={() => setStudyControlsOpen(true)} className="absolute left-3 top-3 z-50 flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white/95 px-3 text-sm font-semibold text-slate-700 shadow-lg backdrop-blur hover:border-indigo-300 hover:text-indigo-700" title="Show study tools" aria-label="Show study tools"><Wrench size={16} /><span>Tools</span></button>
       )}
       {/* Top Header */}
-      {(!studyMode || studyControlsOpen) && <header className="flex items-center justify-between px-3 lg:px-6 py-2.5 bg-white border-b border-slate-200 shadow-2xs z-30 shrink-0 gap-2">
+      {(!studyMode || studyControlsOpen) && headerCollapsed && <div className="flex shrink-0 bg-white px-2 py-0.5"><button type="button" onClick={() => setHeaderCollapsed(false)} aria-label="Expand document toolbar" title="Show document title, layout choices and export controls" className="grid h-7 w-7 place-items-center rounded text-slate-600 hover:bg-slate-100"><ChevronDown size={16} /></button></div>}
+      {(!studyMode || studyControlsOpen) && !headerCollapsed && <header className="flex items-center justify-between px-3 lg:px-6 py-2.5 bg-white border-b border-slate-200 shadow-2xs z-30 shrink-0 gap-2">
         <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={onBack}
@@ -508,7 +518,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
                 layoutMode === 'tabs' ? 'bg-white text-indigo-700 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
               }`}
-              title="Single Screen Tab View (PDF / Notes / AI)"
+              title="Switch between Document Reader, Notes, AI Assistant and Voice Notes"
             >
               <FileText size={14} />
               <span className="hidden md:inline">Single Tab</span>
@@ -529,6 +539,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
           </div>}
 
           {studyMode && <button type="button" onClick={() => setStudyControlsOpen(false)} className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-indigo-700" title="Hide study controls" aria-label="Hide study controls"><SlidersHorizontal size={15} /></button>}
+          <button type="button" onClick={() => setHeaderCollapsed(true)} aria-label="Minimize document toolbar" title="Hide document title, layout choices and export controls" className="grid h-8 w-8 shrink-0 place-items-center rounded text-slate-600 hover:bg-slate-100"><ChevronUp size={16} /></button>
 
           <button type="button" onClick={toggleStudyMode} className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${studyMode ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-300 hover:text-indigo-700'}`} title={studyMode ? 'Exit distraction-free Study Mode' : 'Enter distraction-free Study Mode'}>
             {studyMode ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
@@ -572,7 +583,8 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
       )}
 
       {/* Tab Selector Bar when in 'tabs' layout mode */}
-      {(layoutMode === 'tabs' || isNotebook) && (!studyMode || studyControlsOpen) && (
+      {(layoutMode === 'tabs' || isNotebook) && (!studyMode || studyControlsOpen) && tabsCollapsed && <div className="flex shrink-0 bg-white px-2 py-0.5"><button type="button" onClick={() => setTabsCollapsed(false)} aria-label="Expand workspace tabs" title="Show Document Reader, Notes, AI Assistant and Voice Notes tabs" className="grid h-7 w-7 place-items-center rounded text-slate-600 hover:bg-slate-100"><LayoutGrid size={16} /></button></div>}
+      {(layoutMode === 'tabs' || isNotebook) && (!studyMode || studyControlsOpen) && !tabsCollapsed && (
         <div className="flex items-center justify-around bg-white border-b border-slate-200 px-2 py-1.5 shrink-0 z-20 shadow-2xs">
           {!isNotebook && <button
             onClick={() => setActiveTab('pdf')}
@@ -627,6 +639,7 @@ export function StudyInterface({ document, onBack, account, onAccountChange, onU
             <span className="hidden sm:inline">Voice Notes</span><span className="sm:hidden">Voice</span>
             {voiceNotes.length > 0 && <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-violet-600 px-1 text-[10px] font-bold text-white">{voiceNotes.length}</span>}
           </button>
+          <button type="button" onClick={() => setTabsCollapsed(true)} aria-label="Minimize workspace tabs" title="Hide the workspace tab row without changing your current view" className="grid h-8 w-8 shrink-0 place-items-center rounded text-slate-500 hover:bg-slate-100"><ChevronUp size={16} /></button>
         </div>
       )}
 

@@ -14,6 +14,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
 interface PDFViewerProps {
   onInsertPages?: (file?: File) => void;
+  onDeletePage?: () => void;
   file: string | Blob;
   pageNumber: number;
   setPageNumber: (page: number) => void;
@@ -30,7 +31,7 @@ interface PDFViewerProps {
   onCitationDismiss?: () => void;
 }
 
-export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess, onPageTextReady, onDocumentContextReady, onDocumentPagesReady, onDocumentContextLoadingChange, onDocumentContextProgress, onDocumentLoaded, annotations, onAnnotationsChange, citationTarget = null, onCitationDismiss, onInsertPages }: PDFViewerProps) {
+export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess, onPageTextReady, onDocumentContextReady, onDocumentPagesReady, onDocumentContextLoadingChange, onDocumentContextProgress, onDocumentLoaded, annotations, onAnnotationsChange, citationTarget = null, onCitationDismiss, onInsertPages, onDeletePage }: PDFViewerProps) {
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [scale, setScale] = useState(1.0);
@@ -475,6 +476,7 @@ export function PDFViewer({ file, pageNumber, setPageNumber, onPageRenderSuccess
             <button title="Insert blank page after this page (edited copy)" onClick={() => onInsertPages()} className="p-2 text-slate-600 hover:bg-slate-100 rounded"><FilePlus2 size={17} /></button>
             <label title="Insert PDF after this page (edited copy)" className="p-2 text-slate-600 hover:bg-slate-100 rounded cursor-pointer"><FileUp size={17} /><input aria-label="Insert PDF" type="file" accept="application/pdf,.pdf" className="sr-only" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) onInsertPages(file); }} /></label>
           </>}
+          {onDeletePage && <button type="button" aria-label="Delete current PDF page" title="Remove this page and its notes from a new edited copy. Your original PDF is kept." disabled={!numPages || numPages <= 1} onClick={onDeletePage} className="rounded p-2 text-red-600 hover:bg-red-50 disabled:opacity-35"><Trash2 size={17} /></button>}
           <label title="Add image to this page" className="p-2 text-slate-600 hover:bg-slate-100 rounded cursor-pointer"><ImagePlus size={17} /><input aria-label="Add image to PDF page" type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={async event => {
             const imageFile = event.target.files?.[0]; event.target.value = ''; if (!imageFile) return;
             try {

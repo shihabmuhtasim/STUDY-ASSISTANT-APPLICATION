@@ -12,6 +12,7 @@ import { AccountIdentity, AccountSummary, StudyDocument, StudyFolder } from './t
 import { get, del, set as setStored } from 'idb-keyval';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { SiteNavigation } from './components/SiteNavigation';
+import { useControlDescriptions } from './hooks/useControlDescriptions';
 import { SiteInfoModal } from './components/SiteInfoModal';
 import { AuthModal } from './components/AuthModal';
 import { accountSummaryFromFirebaseUser, signOutAccount, subscribeToAccount } from './services/auth';
@@ -32,6 +33,7 @@ const localLibraryKey = (userId: string) => `study_documents_${userId}`;
 const localFoldersKey = (userId: string) => `study_folders_${userId}`;
 
 export default function App({ initialAccount }: AppProps) {
+  useControlDescriptions();
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [documents, setDocuments] = useState<StudyDocument[]>([]);
   const [folders, setFolders] = useState<StudyFolder[]>([]);
@@ -47,6 +49,7 @@ export default function App({ initialAccount }: AppProps) {
   const [cloudMessage, setCloudMessage] = useState<string | null>(null);
   const [libraryFocusRequest, setLibraryFocusRequest] = useState(0);
   const [studyMode, setStudyMode] = useState(false);
+  const [editedStartPage, setEditedStartPage] = useState<{ documentId: string; page: number } | null>(null);
   const cloudLoadedFor = useRef<string | null>(null);
   const driveSyncedFor = useRef<string | null>(null);
   const legacyDocuments = useRef<StudyDocument[]>([]);
@@ -451,11 +454,12 @@ export default function App({ initialAccount }: AppProps) {
         <StudyInterface
           key={currentDocument.id}
           document={currentDocument}
+          initialPage={editedStartPage?.documentId === currentDocument.id ? editedStartPage.page : 1}
           onBack={handleOpenLibrary}
           account={account}
           onAccountChange={setAccount}
           onUpdateDocument={handleUpdateDocument}
-          onCreateEditedDocument={async (document) => { const saved = await handleAddDocument(document); setCurrentDocument(saved); }}
+          onCreateEditedDocument={async (document, page = 1) => { const saved = await handleAddDocument(document); setEditedStartPage({ documentId: saved.id, page }); setCurrentDocument(saved); }}
           onStudyModeChange={setStudyMode}
           onUpgrade={() => setInfoView('plans')}
         />

@@ -1,0 +1,45 @@
+import { build } from 'esbuild';
+import { createServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import assert from 'node:assert/strict';
+import { PDFDocument } from 'pdf-lib';
+const require = createRequire(import.meta.url);
+const { chromium } = require(require.resolve('playwright', { paths: ['/Users/shihab/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules'] }));
+const root = process.cwd();
+const bundle = await build({ bundle:true, write:false, format:'iife', jsx:'automatic', loader:{'.css':'empty'}, stdin:{resolveDir:root,loader:'tsx',contents:`
+import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
+import {StudyInterface} from './src/components/StudyInterface';import {SiteNavigation} from './src/components/SiteNavigation';import {useControlDescriptions} from './src/hooks/useControlDescriptions';import {PDFDocument} from 'pdf-lib';import {get,set} from 'idb-keyval';
+const noop=()=>{};window.read=get;
+async function boot(){const pdf=await PDFDocument.create();pdf.addPage([400,600]);pdf.addPage([500,700]);pdf.addPage([600,800]);
+const doc={id:'original',title:'Navigation test',fileData:new Blob([await pdf.save()]),totalPages:3,createdAt:1,updatedAt:1};
+await set('notes_original',{3:{id:'note3',documentId:'original',pageNumber:3,content:'Keep third page notes',blocks:[],aiHistory:[]}});
+await set('annotations_original',{3:[{id:'mark',tool:'pen',color:'#000000',width:.002,points:[{x:.1,y:.1}]}]});
+await set('voice-notes:guest:original',[{id:'lecture',pageNumber:3,pageText:'Third page',transcript:'Retain the lecture transcript',createdAt:1,updatedAt:1,status:'saved',parts:['Notes']}]);
+function App(){useControlDescriptions();const [current,setCurrent]=useState(doc),[start,setStart]=useState(1);window.current=current;
+return <div style={{height:'100vh',display:'flex',flexDirection:'column'}}><SiteNavigation account={null} theme='light' onThemeToggle={noop} onLibrary={noop} onPlans={noop} onContact={noop} onAuth={noop} onSignOut={noop}/><div style={{flex:1,minHeight:0}}><StudyInterface key={current.id} document={current} initialPage={start} account={null} onBack={noop} onAccountChange={noop} onUpdateDocument={setCurrent} onStudyModeChange={noop} onUpgrade={noop} onCreateEditedDocument={async(next,page)=>{setStart(page);setCurrent(next);}}/></div></div>;}createRoot(document.getElementById('root')).render(<App/>);}boot();`},plugins:[{name:'mock-cloud',setup(b){
+b.onLoad({filter:/services\/cloudData\.ts$/},()=>({loader:'js',contents:'export async function loadCloudWorkspace(){return {notes:{},annotations:{}}};export async function saveCloudPage(){};export async function loadCloudVoiceJobs(){return []};export async function saveCloudVoiceJob(){};export async function loadCloudPreferences(){return null};export async function saveCloudPreferences(){}'}));
+b.onLoad({filter:/services\/auth\.ts$/},()=>({loader:'js',contents:'export const firebaseAuth={currentUser:null}'}));
+}}],logLevel:'silent'});
+const css=(await require('postcss')([require('@tailwindcss/postcss')({base:root})]).process(await readFile(root+'/app/globals.css','utf8'),{from:root+'/app/globals.css'})).css;
+const worker=await readFile(root+'/public/pdf.worker.min.mjs');
+const server=createServer((req,res)=>{res.setHeader('content-type',req.url==='/app.js'||req.url==='/pdf.worker.min.mjs'?'text/javascript':'text/html');res.end(req.url==='/app.js'?bundle.outputFiles[0].text:req.url==='/pdf.worker.min.mjs'?worker:'<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>'+css+'</style></head><body><div id="root"></div><script src="/app.js"></script></body></html>');});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));let browser;
+try{browser=await chromium.launch({headless:true,channel:'chrome'});const page=await browser.newPage({viewport:{width:1440,height:960}});const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',dialog=>dialog.accept());await page.goto('http://127.0.0.1:'+server.address().port);
+await page.getByRole('button',{name:'Minimize main navigation'}).click();assert.equal(await page.getByRole('button',{name:'Library',exact:true}).count(),0);await page.getByRole('button',{name:'Expand main navigation'}).click();
+await page.getByRole('button',{name:'Minimize document toolbar'}).click();assert.equal(await page.getByRole('button',{name:'Export Pack',exact:true}).count(),0);await page.getByRole('button',{name:'Expand document toolbar'}).click();
+await page.getByRole('button',{name:'Library',exact:true}).hover();assert.match(await page.getByRole('button',{name:'Library',exact:true}).getAttribute('title'),/document library/);await page.getByRole('button',{name:'Single Tab',exact:true}).click();
+await page.getByRole('button',{name:'Minimize workspace tabs'}).click();assert.equal(await page.getByRole('button',{name:'AI Assistant',exact:true}).count(),0);await page.getByRole('button',{name:'Expand workspace tabs'}).click();
+await page.getByRole('button',{name:'Next Page (Right Arrow)',exact:true}).click();
+await page.getByTitle('Insert blank page after this page (edited copy)',{exact:true}).click();await page.waitForFunction(()=>window.current.id!=='original');
+await page.waitForFunction(()=>document.querySelector('main form input[type=text]')?.value==='3');
+let result=await page.evaluate(async()=>({id:window.current.id,total:window.current.totalPages,notes:await window.read('notes_'+window.current.id),voice:await window.read('voice-notes:guest:'+window.current.id)}));
+assert.equal(result.total,4);assert.equal(result.notes[4].content,'Keep third page notes');assert.equal(result.voice[0].pageNumber,4);
+const firstEdit=result.id;await page.getByRole('button',{name:'Delete current PDF page',exact:true}).click();await page.waitForFunction(id=>window.current.id!==id,firstEdit);
+await page.waitForFunction(()=>document.querySelector('main form input[type=text]')?.value==='3');
+result=await page.evaluate(async()=>({total:window.current.totalPages,notes:await window.read('notes_'+window.current.id),voice:await window.read('voice-notes:guest:'+window.current.id)}));assert.equal(result.total,3);assert.equal(result.notes[3].content,'Keep third page notes');assert.equal(result.voice[0].pageNumber,3);
+const extra=await PDFDocument.create();extra.addPage([200,300]);extra.addPage([250,350]);const previousId=await page.evaluate(()=>window.current.id);
+await page.getByLabel('Insert PDF',{exact:true}).setInputFiles({name:'extra.pdf',mimeType:'application/pdf',buffer:Buffer.from(await extra.save())});await page.waitForFunction(id=>window.current.id!==id,previousId);await page.waitForFunction(()=>document.querySelector('main form input[type=text]')?.value==='4');assert.equal(await page.evaluate(()=>window.current.totalPages),5);
+await page.locator('.react-pdf__Page__canvas').waitFor();
+await page.screenshot({path:'/private/tmp/notemydoc-navigation-desktop.png'});await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'Minimize main navigation'}).click();await page.getByRole('button',{name:'Minimize document toolbar'}).click();await page.getByRole('button',{name:'Minimize workspace tabs'}).click();await page.screenshot({path:'/private/tmp/notemydoc-navigation-mobile.png'});assert.deepEqual(errors,[]);console.log('PASS: page insertion opens at inserted page; deletion keeps position and remaps notes/voice; independent navigation collapse/expand, hover descriptions, desktop/mobile.');
+}finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}

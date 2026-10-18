@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BookOpenCheck, ChevronDown, CircleUserRound, FolderOpen, LogIn, LogOut, Mail, Menu, Moon, ShieldCheck, Sparkles, Sun, Tag, X } from 'lucide-react';
+import { BookOpenCheck, ChevronDown, ChevronUp, CircleUserRound, FolderOpen, LogIn, LogOut, Mail, Menu, Moon, ShieldCheck, Sparkles, Sun, Tag, X } from 'lucide-react';
 import type { AccountIdentity, AccountSummary } from '../types';
 
 interface SiteNavigationProps {
@@ -17,6 +17,7 @@ interface SiteNavigationProps {
 export function SiteNavigation({ account, theme, onThemeToggle, isLibraryActive, onLibrary, onPlans, onContact, onAuth, onSignOut }: SiteNavigationProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const accessLabel = account && 'role' in account && account.role === 'admin'
     ? 'Admin'
     : account && 'plan' in account && account.plan === 'pro'
@@ -28,6 +29,8 @@ export function SiteNavigation({ account, theme, onThemeToggle, isLibraryActive,
     setMenuOpen(false);
     action();
   };
+
+  if (collapsed) return <header className="site-navigation relative z-50 shrink-0 border-b border-slate-200 bg-white px-3 py-1"><button type="button" onClick={() => setCollapsed(false)} aria-label="Expand main navigation" title="Show Library, Plans, Contact and your account" className="brand-mark grid h-8 w-8 place-items-center rounded-md bg-[#171717] text-white"><BookOpenCheck size={18} /></button></header>;
 
   return (
     <header className="site-navigation relative z-50 shrink-0 border-b border-black/10 bg-white/90 backdrop-blur-xl">
@@ -77,6 +80,7 @@ export function SiteNavigation({ account, theme, onThemeToggle, isLibraryActive,
           )}
         </div>
 
+        <button type="button" onClick={() => { setCollapsed(true); setMenuOpen(false); setAccountOpen(false); }} aria-label="Minimize main navigation" title="Hide the top navigation and keep only the NoteMyDoc AI logo" className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-slate-500 hover:bg-slate-100"><ChevronUp size={16} /></button>
         <div className="flex items-center gap-1 md:hidden">
           <button type="button" onClick={onThemeToggle} className="grid h-9 w-9 place-items-center rounded-md text-slate-600 hover:bg-slate-100" aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`} title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>{theme === 'light' ? <Moon size={19} /> : <Sun size={19} />}</button>
           <button type="button" onClick={() => setMenuOpen((value) => !value)} className="rounded-md p-2 text-slate-600 hover:bg-slate-100" aria-label={menuOpen ? 'Close navigation' : 'Open navigation'}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
