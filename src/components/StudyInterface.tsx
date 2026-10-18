@@ -653,8 +653,8 @@ export function StudyInterface({ document, initialPage = 1, onBack, account, onA
         ) : layoutMode === 'tabs' || isNotebook ? (
           /* Single Tab View */
           <div className="h-full w-full relative">
-            {!isNotebook && activeTab === 'pdf' && (
-              <div className="h-full w-full flex flex-col relative">
+            {!isNotebook && (
+              <div className={`h-full w-full flex flex-col ${activeTab === 'pdf' ? 'relative' : 'absolute inset-0 invisible pointer-events-none'}`} aria-hidden={activeTab !== 'pdf'}>
                 <PDFViewer {...pdfViewerProps} />
                 
                 {/* Floating Navigation Quick Bar */}

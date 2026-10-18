@@ -11,6 +11,7 @@ import {
   remainingPercentage,
 } from './aiUsage';
 import type { VerifiedFirebaseUser } from './firebaseUser';
+import { adminPromotion } from './accountPolicy';
 
 function usagePeriod(date = new Date()) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -29,7 +30,8 @@ export async function ensureUser(user: VerifiedFirebaseUser) {
   await ensureDatabaseSchema();
   const db = getDb();
   const now = Date.now();
-  const isAdmin = user.emailVerified === true && adminEmails().has(user.email.toLowerCase());
+  const promotion = adminPromotion(user.email, user.emailVerified, adminEmails());
+  const isAdmin = promotion.role === 'admin';
 
   await db.insert(users).values({
     id: user.uid,
@@ -44,8 +46,7 @@ export async function ensureUser(user: VerifiedFirebaseUser) {
     set: {
       email: user.email,
       displayName: user.displayName,
-      role: isAdmin ? 'admin' as const : 'user' as const,
-      ...(isAdmin ? { plan: 'pro' as const } : {}),
+      ...promotion,
       lastSeenAt: now,
     },
   });

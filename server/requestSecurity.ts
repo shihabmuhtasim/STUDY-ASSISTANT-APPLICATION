@@ -41,7 +41,7 @@ export function validateStudyInput(body: Record<string, unknown>, custom = false
   }
   for (const name of ['allowFallback', 'referencesEnabled', 'testMode']) if (body[name] !== undefined && typeof body[name] !== 'boolean') throw new InputError(`Invalid ${name}.`);
   if (body.scope !== undefined && body.scope !== 'page' && body.scope !== 'document') throw new InputError('Invalid study scope.');
-  if (body.modelPreference !== undefined && !['auto', 'basic', 'gemini-flash', 'gemini-flash-lite', 'qwen', 'llama', 'gemma', 'glm', 'nemotron'].includes(String(body.modelPreference))) throw new InputError('Choose an available model.');
+  if (body.modelPreference !== undefined && (typeof body.modelPreference !== 'string' || !['auto', 'basic', 'gemini-flash', 'gemini-flash-lite', 'qwen', 'llama', 'gemma', 'glm', 'nemotron'].includes(body.modelPreference))) throw new InputError('Choose an available model.');
   if (body.history !== undefined && (!Array.isArray(body.history) || body.history.length > 3 || body.history.some(item => !item || typeof item.prompt !== 'string' || typeof item.response !== 'string' || item.prompt.length > 700 || item.response.length > 1_800))) throw new InputError('The conversation history is invalid or too large.');
 }
 

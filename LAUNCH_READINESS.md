@@ -8,6 +8,7 @@ Checked 18 October 2026. Payments and testing with other people were intentional
 - Verified-email requirement for administrator access. Administrator status comes from the backend allowlist and D1, not client-writable Firestore profile fields.
 - Shared D1 request windows and expiring concurrency leases. Defaults: 12 requests/minute per user, 2 concurrent requests per user, 30 hosted requests/minute, 8 concurrent hosted requests and 16 concurrent custom requests. These are application safety caps, not provider entitlements or a guarantee of user capacity.
 - Complete allowance reservation: a request larger than the remaining balance is rejected instead of reserving only a small part of its estimated cost.
+- PDF indexing remains mounted in single-tab mode, so switching to AI before indexing finishes does not leave the assistant permanently disabled.
 - Public HTTPS custom endpoints only; blocked IP literals/private hostnames, URL credentials and redirect forwarding. Provider responses are bounded and custom-provider credential strings are redacted from errors. Arbitrary custom domains still require caution: hostname validation alone is not a DNS-rebinding-proof network firewall.
 - Encrypted custom keys remain owner-bound through AES-GCM authenticated data. Lists return masked metadata, not plaintext keys.
 - Response security headers, API no-store caching, clickjacking protection and Google-popup-compatible opener policy. CSP is a conservative baseline, not a complete strict script allowlist.
