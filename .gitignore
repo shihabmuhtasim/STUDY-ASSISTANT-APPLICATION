@@ -1,4 +1,5 @@
 node_modules/
+public/word-renderer.js
 build/
 dist/
 .next/

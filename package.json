@@ -4,8 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vinext dev --port 3000",
-    "build": "vinext build",
+    "dev": "node scripts/prepare-word-renderer.mjs && vinext dev --port 3000",
+    "build": "node scripts/prepare-word-renderer.mjs && vinext build",
     "start": "vinext start",
     "deploy:cloudflare": "npm run build && vinext-cloudflare deploy --config dist/server/wrangler.json --skip-build",
     "prepare:pages": "node scripts/prepare-pages-deploy.mjs",

@@ -91,7 +91,7 @@ async function textToPdf(text: string) {
 }
 
 async function waitForRenderedAssets(container: HTMLElement) {
-  await document.fonts?.ready;
+  await container.ownerDocument.fonts?.ready;
   const images = Array.from(container.querySelectorAll('img'));
   await Promise.all(images.map(async (image) => {
     if (image.complete) {
@@ -114,14 +114,20 @@ async function renderedPagesToPdf(pages: HTMLElement[]) {
   let pdf: InstanceType<typeof jsPDF> | null = null;
 
   for (const [index, page] of pages.entries()) {
+    const bounds = page.getBoundingClientRect();
     const canvas = await html2canvas(page, {
       backgroundColor: '#ffffff',
       logging: false,
       scale: Math.min(2, Math.max(1.4, window.devicePixelRatio || 1)),
       useCORS: true,
+      foreignObjectRendering: true,
+      // Native SVG capture positions the cloned page at its own origin.
+      x: -bounds.left,
+      y: -bounds.top,
     });
-    const width = canvas.width * 0.75;
-    const height = canvas.height * 0.75;
+    // Capture resolution must not change the Word page's physical dimensions.
+    const width = bounds.width * 0.75;
+    const height = bounds.height * 0.75;
     const orientation = width > height ? 'landscape' : 'portrait';
 
     if (!pdf) pdf = new jsPDF({ unit: 'pt', format: [width, height], orientation });
@@ -143,37 +149,57 @@ async function renderedPagesToPdf(pages: HTMLElement[]) {
 }
 
 async function wordToPdf(file: File, extension: 'doc' | 'docx') {
-  const host = document.createElement('div');
-  host.style.cssText = 'position:fixed;left:-100000px;top:0;background:#fff;z-index:-1;pointer-events:none;';
-  document.body.appendChild(host);
+  // Word layout must not inherit Tailwind resets, theme styles, or app fonts.
+  const frame = document.createElement('iframe');
+  frame.title = 'Word document conversion';
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.cssText = 'position:fixed;left:-100000px;top:0;width:1280px;height:900px;border:0;pointer-events:none;';
+  document.body.appendChild(frame);
+  const conversionDocument = frame.contentDocument!;
+  conversionDocument.open();
+  conversionDocument.write('<!doctype html><html><head><meta charset="utf-8"><style>html{color-scheme:light}body{margin:0;background:white;color:black}img{max-width:none}</style></head><body></body></html>');
+  conversionDocument.close();
+  const host = conversionDocument.body;
 
   let dispose: (() => void) | undefined;
   try {
+    await new Promise<void>((resolve, reject) => {
+      const script = conversionDocument.createElement('script');
+      script.src = '/word-renderer.js?v=0.2.2';
+      const timer = window.setTimeout(() => reject(new Error('The Word converter took too long to load. Refresh and try again.')), 20_000);
+      script.onload = () => { window.clearTimeout(timer); resolve(); };
+      script.onerror = () => {
+        window.clearTimeout(timer);
+        reject(new Error('The Word converter could not load. Refresh the page and try again.'));
+      };
+      conversionDocument.head.appendChild(script);
+    });
+    const converter = (frame.contentWindow as Window & {
+      StudyWordRenderer: Pick<typeof import('docx-renderer'), 'render'> & Pick<typeof import('msdoc-viewer'), 'createMsDocViewer'>;
+    }).StudyWordRenderer;
     let pages: HTMLElement[] = [];
     if (extension === 'docx') {
-      const [{ render }, mammoth] = await Promise.all([import('docx-renderer'), import('mammoth')]);
-      const styleHost = document.createElement('div');
-      const bodyHost = document.createElement('div');
+      const { render } = converter;
+      const styleHost = conversionDocument.createElement('div');
+      const bodyHost = conversionDocument.createElement('div');
       host.appendChild(styleHost);
       host.appendChild(bodyHost);
       const result = await render(file, bodyHost, styleHost, {
         breakPages: true,
-        ignoreLastRenderedPageBreak: false,
+        ignoreLastRenderedPageBreak: true,
         useBase64URL: true,
       });
       dispose = result.dispose;
       pages = result.pages.map((page) => page.element);
 
-      // Some Word files omit rendered page-break hints. Keep the visual renderer,
-      // but retain a text conversion fallback if it cannot produce a page.
+      // Do not silently replace an unsupported Word layout with unformatted text.
       if (pages.length === 0) {
-        const text = (await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value.trim();
-        return textToPdf(text);
+        throw new Error('This Word layout could not be rendered. Save it as a PDF in Word and upload the PDF to preserve its formatting.');
       }
     } else {
-      const { createMsDocViewer } = await import('msdoc-viewer');
+      const { createMsDocViewer } = converter;
       const viewer = createMsDocViewer(host);
-      await viewer.load(file);
+      await viewer.load(new Uint8Array(await file.arrayBuffer()));
       dispose = () => viewer.destroy();
       pages = Array.from(host.querySelectorAll<HTMLElement>('.msdoc-page:not(.msdoc-page-measure)'));
       for (const page of pages) {
@@ -187,7 +213,7 @@ async function wordToPdf(file: File, extension: 'doc' | 'docx') {
     return await renderedPagesToPdf(pages);
   } finally {
     dispose?.();
-    host.remove();
+    frame.remove();
   }
 }
 
