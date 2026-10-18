@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpenCheck, CheckCircle2, ChevronRight, Cloud, CloudOff, FileText, Folder, FolderPlus, Layers3, Loader2, MessageSquareText, NotebookPen, Pencil, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
+import { BookOpenCheck, CheckCircle2, ChevronRight, Cloud, CloudOff, FileText, Folder, FolderPlus, GripVertical, Layers3, Loader2, MessageSquareText, NotebookPen, Pencil, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { AccountIdentity, AccountSummary, StudyDocument, StudyFolder } from '../types';
 import { DOCUMENT_ACCEPT, prepareStudyFile } from '../utils/documentImport';
@@ -37,6 +37,8 @@ export function Library({ documents, folders, onOpenDocument, onAddDocument, onD
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [selectedFolderId, setSelectedFolderId] = useState<'all' | 'unfiled' | string>('all');
+  const [libraryView, setLibraryView] = useState<'documents' | 'organize'>('documents');
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
 
@@ -50,12 +52,12 @@ export function Library({ documents, folders, onOpenDocument, onAddDocument, onD
     const normalized = query.trim().toLowerCase();
     return [...documents]
       .filter((doc) => !normalized || doc.title.toLowerCase().includes(normalized))
-      .filter((doc) => selectedFolderId === 'all' || (selectedFolderId === 'unfiled' ? !doc.folderId : doc.folderId === selectedFolderId))
+      .filter((doc) => libraryView === 'documents' || selectedFolderId === 'all' || (selectedFolderId === 'unfiled' ? !doc.folderId : doc.folderId === selectedFolderId))
       .sort((a, b) => b.updatedAt - a.updatedAt);
-  }, [documents, query, selectedFolderId]);
+  }, [documents, query, selectedFolderId, libraryView]);
 
   useEffect(() => {
-    if (selectedFolderId !== 'all' && selectedFolderId !== 'unfiled' && !folders.some((folder) => folder.id === selectedFolderId)) setSelectedFolderId('all');
+    if (selectedFolderId !== 'all' && selectedFolderId !== 'unfiled' && !folders.some((folder) => folder.id === selectedFolderId)) setSelectedFolderId('unfiled');
   }, [folders, selectedFolderId]);
 
   const processFile = async (file: File) => {
@@ -246,24 +248,37 @@ export function Library({ documents, folders, onOpenDocument, onAddDocument, onD
             )}
           </div>
 
-          <div className="custom-scrollbar mb-5 flex items-center gap-2 overflow-x-auto pb-2">
-            <button type="button" onClick={() => setSelectedFolderId('all')} className={`flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${selectedFolderId === 'all' ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`}><Layers3 size={14} />All documents <span className="text-slate-400">{documents.length}</span></button>
+          <div role="tablist" aria-label="Library views" className="mb-5 flex gap-1 border-b border-slate-200">
+            <button type="button" role="tab" aria-selected={libraryView === 'documents'} onClick={() => setLibraryView('documents')} className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${libraryView === 'documents' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500'}`}><Layers3 size={16} />All documents <span className="text-slate-400">{documents.length}</span></button>
+            <button type="button" role="tab" aria-selected={libraryView === 'organize'} onClick={() => { setLibraryView('organize'); if (selectedFolderId === 'all') setSelectedFolderId('unfiled'); }} className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${libraryView === 'organize' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500'}`}><Folder size={16} />Organize</button>
+          </div>
+
+          {libraryView === 'organize' && <>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2 text-sm">
+              <button type="button" onClick={() => setSelectedFolderId('unfiled')} title="Show folders and unfiled documents" className="font-semibold text-indigo-700">Folders</button>
+              {selectedFolderId !== 'unfiled' && selectedFolderId !== 'all' && <><ChevronRight size={14} className="shrink-0 text-slate-400" /><span className="break-words font-medium text-slate-800">{folders.find(folder => folder.id === selectedFolderId)?.name}</span></>}
+            </div>
+            {creatingFolder ? (
+              <form onSubmit={(event) => { event.preventDefault(); void createFolder(); }} className="flex max-w-full items-center gap-1 rounded-md border border-indigo-300 bg-white p-1">
+                <input autoFocus aria-label="Folder name" value={newFolderName} onChange={(event) => setNewFolderName(event.target.value)} placeholder="Folder name" maxLength={60} className="min-w-0 w-36 px-2 py-1 text-xs outline-none" />
+                <button type="submit" className="rounded bg-indigo-600 px-2 py-1 text-xs font-semibold text-white">Create</button>
+                <button type="button" onClick={() => { setCreatingFolder(false); setNewFolderName(''); }} className="p-1 text-slate-400" aria-label="Cancel folder creation"><X size={14} /></button>
+              </form>
+            ) : <button type="button" onClick={() => account ? setCreatingFolder(true) : onRequireAuth()} className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700" title="Create a folder to organize your documents"><FolderPlus size={15} />New folder</button>}
+          </div>
+          <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             <button type="button" onClick={() => setSelectedFolderId('unfiled')} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropDocument(event)} className={`flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${selectedFolderId === 'unfiled' ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`} title="Drop a document here to remove it from its folder"><FileText size={14} />Unfiled <span className="text-slate-400">{documents.filter((item) => !item.folderId).length}</span></button>
             {folders.map((folder) => (
-              <div key={folder.id} onDragOver={(event) => event.preventDefault()} onDrop={(event) => dropDocument(event, folder.id)} className={`flex shrink-0 items-center rounded-md border ${selectedFolderId === folder.id ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 bg-white'}`} title="Drop a document into this folder">
-                <button type="button" onClick={() => setSelectedFolderId(folder.id)} className={`flex items-center gap-2 px-3 py-2 text-xs font-semibold ${selectedFolderId === folder.id ? 'text-indigo-700' : 'text-slate-600'}`}><Folder size={14} />{folder.name}<span className="text-slate-400">{documents.filter((item) => item.folderId === folder.id).length}</span></button>
+              <div key={folder.id} data-folder-id={folder.id} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropTarget(folder.id); }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDropTarget(null); }} onDrop={(event) => { setDropTarget(null); dropDocument(event, folder.id); }} className={`relative flex min-w-0 flex-wrap items-center rounded-lg border p-2 transition-colors ${dropTarget === folder.id ? 'border-indigo-500 bg-indigo-100 ring-2 ring-indigo-300' : selectedFolderId === folder.id ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 bg-white'}`} title="Drop a document into this folder">
+                <button type="button" onClick={() => setSelectedFolderId(folder.id)} className="flex min-w-0 w-full items-center gap-3 p-2 text-left" aria-label={`Open folder ${folder.name}`}><Folder size={30} className="shrink-0 text-amber-500" /><span className="min-w-0"><span className="block break-words text-sm font-semibold text-slate-800">{folder.name}</span><span className="mt-1 block text-xs text-slate-500">{documents.filter((item) => item.folderId === folder.id).length} documents</span></span></button>
                 <button type="button" onClick={() => { const name = window.prompt('Rename folder', folder.name); if (name) void onRenameFolder(folder.id, name); }} className="p-2 text-slate-400 hover:text-indigo-600" title={`Rename ${folder.name}`} aria-label={`Rename ${folder.name}`}><Pencil size={13} /></button>
                 <button type="button" onClick={() => { if (window.confirm(`Delete “${folder.name}”? Documents will move to Unfiled.`)) void onDeleteFolder(folder.id); }} className="p-2 text-slate-400 hover:text-red-600" title={`Delete ${folder.name}`} aria-label={`Delete ${folder.name}`}><Trash2 size={13} /></button>
               </div>
             ))}
-            {creatingFolder ? (
-              <form onSubmit={(event) => { event.preventDefault(); void createFolder(); }} className="flex shrink-0 items-center gap-1 rounded-md border border-indigo-300 bg-white p-1">
-                <input autoFocus value={newFolderName} onChange={(event) => setNewFolderName(event.target.value)} placeholder="Folder name" maxLength={60} className="w-36 px-2 py-1 text-xs outline-none" />
-                <button type="submit" className="rounded bg-indigo-600 px-2 py-1 text-xs font-semibold text-white">Create</button>
-                <button type="button" onClick={() => { setCreatingFolder(false); setNewFolderName(''); }} className="p-1 text-slate-400" aria-label="Cancel folder creation"><X size={14} /></button>
-              </form>
-            ) : <button type="button" onClick={() => account ? setCreatingFolder(true) : onRequireAuth()} className="flex shrink-0 items-center gap-2 rounded-md border border-dashed border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-700"><FolderPlus size={14} />New folder</button>}
           </div>
+          <h3 className="mb-3 text-sm font-semibold text-slate-700">{selectedFolderId === 'unfiled' ? 'Unfiled documents' : folders.find(folder => folder.id === selectedFolderId)?.name}</h3>
+          </>}
 
           {documents.length === 0 ? (
             <div className="py-12 text-center border-t border-slate-200">
@@ -293,6 +308,7 @@ export function Library({ documents, folders, onOpenDocument, onAddDocument, onD
                       )}
                     </div>
                     <div className="flex items-center gap-0.5">
+                      {libraryView === 'organize' && <button type="button" draggable className="cursor-grab rounded p-1.5 text-slate-400 hover:text-indigo-600 active:cursor-grabbing" title="Drag this document onto a folder" aria-label={`Drag ${document.title}`}><GripVertical size={15} /></button>}
                       <button type="button" onClick={() => { setEditingId(document.id); setEditingTitle(document.title); }} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded" title="Rename" aria-label={`Rename ${document.title}`}><Pencil size={15} /></button>
                       <button type="button" onClick={() => { if (window.confirm(`Delete “${document.title}” and its local notes?`)) onDeleteDocument(document.id); }} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="Delete" aria-label={`Delete ${document.title}`}><Trash2 size={15} /></button>
                     </div>

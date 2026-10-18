@@ -60,6 +60,7 @@ export function StudyInterface({ document, initialPage = 1, onBack, account, onA
 
   // Universal Layout Mode: 'split' (all 3 panes visible) | 'tabs' (1 pane visible with tab navigation) | 'pdf-only'
   const [layoutMode, setLayoutMode] = useState<'split' | 'tabs' | 'pdf-only'>(isNotebook ? 'tabs' : 'split');
+  const [splitPreset, setSplitPreset] = useState<'classic' | 'pdf-notes' | 'pdf-ai' | 'notes-ai' | 'columns'>('classic');
 
   // Active Tab when in 'tabs' mode: document, notes, manual AI chat, or generated voice notes.
   const [activeTab, setActiveTab] = useState<'pdf' | 'notes' | 'ai' | 'voice'>(isNotebook ? 'notes' : 'pdf');
@@ -457,6 +458,17 @@ export function StudyInterface({ document, initialPage = 1, onBack, account, onA
     setActiveTab('notes');
   };
 
+  const notesPanel = <NotesPanel
+    key={`${document.id}-${activeNoteKey}-${currentNote.id}`}
+    note={currentNote}
+    title={studyScope === 'document' ? 'Notes about the whole document' : undefined}
+    defaultHeading={document.defaultNoteHeading || ''}
+    onDefaultHeadingChange={(defaultNoteHeading) => onUpdateDocument({ ...document, defaultNoteHeading, updatedAt: Date.now() })}
+    onChange={handleNoteChange}
+    onClear={handleClearNote}
+    onSave={() => { set(`notes_${document.id}`, notes).catch(error => console.error('Failed to save notes', error)); }}
+  />;
+
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-slate-50 font-sans">
       {inserting && <div role="status" className="absolute inset-0 z-[100] flex items-center justify-center bg-white/90 text-slate-800">Updating pages and saving your edited copy...</div>}
@@ -465,7 +477,7 @@ export function StudyInterface({ document, initialPage = 1, onBack, account, onA
       )}
       {/* Top Header */}
       {(!studyMode || studyControlsOpen) && headerCollapsed && <div className="flex shrink-0 bg-white px-2 py-0.5"><button type="button" onClick={() => setHeaderCollapsed(false)} aria-label="Expand document toolbar" title="Show document title, layout choices and export controls" className="grid h-7 w-7 place-items-center rounded text-slate-600 hover:bg-slate-100"><ChevronDown size={16} /></button></div>}
-      {(!studyMode || studyControlsOpen) && !headerCollapsed && <header className="flex items-center justify-between px-3 lg:px-6 py-2.5 bg-white border-b border-slate-200 shadow-2xs z-30 shrink-0 gap-2">
+      {(!studyMode || studyControlsOpen) && !headerCollapsed && <header className="flex flex-wrap items-center justify-between px-3 lg:px-6 py-2.5 bg-white border-b border-slate-200 shadow-2xs z-30 shrink-0 gap-2">
         <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={onBack}
@@ -483,7 +495,7 @@ export function StudyInterface({ document, initialPage = 1, onBack, account, onA
         </div>
 
         {/* Global Layout Switcher for Laptop, Tablet & Mobile */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {!isNotebook && <button
             type="button"
             onClick={() => {
@@ -500,19 +512,7 @@ export function StudyInterface({ document, initialPage = 1, onBack, account, onA
             <span className="hidden sm:inline">{studyScope === 'document' ? 'Whole document' : 'Study whole document'}</span>
             <span className="sm:hidden">Whole PDF</span>
           </button>}
-          {!isNotebook && <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-            <button
-              onClick={() => setLayoutMode('split')}
-              className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
-                layoutMode === 'split' ? 'bg-white text-indigo-700 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="3-Pane Split View (All 3 boxes visible at once)"
-            >
-              <LayoutGrid size={14} />
-              <span className="hidden md:inline">3-Pane Split</span>
-              <span className="md:hidden">Split</span>
-            </button>
-
+          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
             <button
               onClick={() => setLayoutMode('tabs')}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
@@ -525,7 +525,7 @@ export function StudyInterface({ document, initialPage = 1, onBack, account, onA
               <span className="md:hidden">Tabs</span>
             </button>
 
-            <button
+            {!isNotebook && <button
               onClick={() => setLayoutMode('pdf-only')}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
                 layoutMode === 'pdf-only' ? 'bg-white text-indigo-700 shadow-2xs font-semibold' : 'text-slate-600 hover:text-slate-900'
@@ -535,8 +535,20 @@ export function StudyInterface({ document, initialPage = 1, onBack, account, onA
               <Eye size={14} />
               <span className="hidden md:inline">Document Focus</span>
               <span className="md:hidden">Document</span>
-            </button>
-          </div>}
+            </button>}
+          </div>
+
+          <label className="hidden md:flex items-center gap-1.5 text-slate-600" title="Choose which panels to show side by side">
+            <LayoutGrid size={15} />
+            <select aria-label="Split panel layout" value={layoutMode === 'split' ? splitPreset : ''} onChange={(event) => { if (event.target.value) { setSplitPreset(event.target.value as typeof splitPreset); setLayoutMode('split'); } }} className="max-w-52 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-700">
+              <option value="" disabled>Split panels</option>
+              {!isNotebook && <option value="classic">Original 3-pane layout</option>}
+              {!isNotebook && <option value="pdf-notes">PDF + Notes</option>}
+              {!isNotebook && <option value="pdf-ai">PDF + AI</option>}
+              <option value="notes-ai">Notes + AI</option>
+              {!isNotebook && <option value="columns">3 columns: PDF + Notes + AI</option>}
+            </select>
+          </label>
 
           {studyMode && <button type="button" onClick={() => setStudyControlsOpen(false)} className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-indigo-700" title="Hide study controls" aria-label="Hide study controls"><SlidersHorizontal size={15} /></button>}
           <button type="button" onClick={() => setHeaderCollapsed(true)} aria-label="Minimize document toolbar" title="Hide document title, layout choices and export controls" className="grid h-8 w-8 shrink-0 place-items-center rounded text-slate-600 hover:bg-slate-100"><ChevronUp size={16} /></button>
@@ -583,8 +595,8 @@ export function StudyInterface({ document, initialPage = 1, onBack, account, onA
       )}
 
       {/* Tab Selector Bar when in 'tabs' layout mode */}
-      {(layoutMode === 'tabs' || isNotebook) && (!studyMode || studyControlsOpen) && tabsCollapsed && <div className="flex shrink-0 bg-white px-2 py-0.5"><button type="button" onClick={() => setTabsCollapsed(false)} aria-label="Expand workspace tabs" title="Show Document Reader, Notes, AI Assistant and Voice Notes tabs" className="grid h-7 w-7 place-items-center rounded text-slate-600 hover:bg-slate-100"><LayoutGrid size={16} /></button></div>}
-      {(layoutMode === 'tabs' || isNotebook) && (!studyMode || studyControlsOpen) && !tabsCollapsed && (
+      {layoutMode === 'tabs' && (!studyMode || studyControlsOpen) && tabsCollapsed && <div className="flex shrink-0 bg-white px-2 py-0.5"><button type="button" onClick={() => setTabsCollapsed(false)} aria-label="Expand workspace tabs" title="Show Document Reader, Notes, AI Assistant and Voice Notes tabs" className="grid h-7 w-7 place-items-center rounded text-slate-600 hover:bg-slate-100"><LayoutGrid size={16} /></button></div>}
+      {layoutMode === 'tabs' && (!studyMode || studyControlsOpen) && !tabsCollapsed && (
         <div className="flex items-center justify-around bg-white border-b border-slate-200 px-2 py-1.5 shrink-0 z-20 shadow-2xs">
           {!isNotebook && <button
             onClick={() => setActiveTab('pdf')}
@@ -644,13 +656,18 @@ export function StudyInterface({ document, initialPage = 1, onBack, account, onA
       )}
 
       {/* Main Workspace Body */}
+      {layoutMode === 'split' && splitPreset === 'notes-ai' && !isNotebook && <div className="flex shrink-0 items-center justify-center gap-3 border-b border-slate-200 bg-white py-1 text-xs text-slate-700">
+        <button type="button" disabled={pageNumber <= 1} onClick={() => setPageNumber(pageNumber - 1)} aria-label="Previous study page" title="Use notes and AI from the previous PDF page" className="rounded p-1 disabled:opacity-30"><ChevronLeft size={17} /></button>
+        <span>Page {pageNumber} / {document.totalPages}</span>
+        <button type="button" disabled={pageNumber >= document.totalPages} onClick={() => setPageNumber(pageNumber + 1)} aria-label="Next study page" title="Use notes and AI from the next PDF page" className="rounded p-1 disabled:opacity-30"><ChevronRight size={17} /></button>
+      </div>}
       <main className={`flex-1 overflow-hidden relative ${studyMode ? 'p-0' : 'p-2 lg:p-3'}`}>
         {layoutMode === 'pdf-only' && !isNotebook ? (
           /* Document Reader Full Screen */
           <div className="h-full w-full p-1">
             <PDFViewer {...pdfViewerProps} />
           </div>
-        ) : layoutMode === 'tabs' || isNotebook ? (
+        ) : layoutMode === 'tabs' || (isNotebook && layoutMode !== 'split') ? (
           /* Single Tab View */
           <div className="h-full w-full relative">
             {!isNotebook && (
@@ -701,6 +718,18 @@ export function StudyInterface({ document, initialPage = 1, onBack, account, onA
             {activeTab === 'voice' && <VoiceNotesPanel voice={voice} pageNumber={pageNumber} notes={voiceNotes} instructions={document.voiceNotePrompt} onInstructionsChange={(voiceNotePrompt) => onUpdateDocument({ ...document, voiceNotePrompt, updatedAt: Date.now() })} onManage={() => setVoiceConnectionsOpen(true)} onOpenPage={openVoicePage} />}
 
           </div>
+        ) : splitPreset !== 'classic' ? (
+          <>
+            {splitPreset === 'notes-ai' && !isNotebook && <div className="absolute inset-0 invisible pointer-events-none" aria-hidden="true"><PDFViewer {...pdfViewerProps} /></div>}
+            <PanelGroup key={splitPreset} orientation="horizontal" className="h-full w-full" aria-label="Custom study panels">
+              {(['pdf', 'notes', 'ai'] as const).filter(panel => splitPreset === 'columns' || splitPreset.split('-').includes(panel)).map((panel, index) => <React.Fragment key={panel}>
+                {index > 0 && <PanelResizeHandle className="flex w-3 shrink-0 cursor-col-resize items-center justify-center rounded hover:bg-indigo-100" aria-label="Resize study panels"><GripVertical size={16} className="text-slate-400" /></PanelResizeHandle>}
+                <Panel id={panel} defaultSize={splitPreset === 'columns' ? 33.33 : 50} minSize={20} className="min-w-0 p-1" data-study-panel={panel}>
+                  {panel === 'pdf' ? <PDFViewer {...pdfViewerProps} /> : panel === 'notes' ? notesPanel : <AIAssistant {...aiAssistantProps} />}
+                </Panel>
+              </React.Fragment>)}
+            </PanelGroup>
+          </>
         ) : (
           /* 3-Pane Split View - Visible simultaneously on laptop, desktop, tablet, or mobile */
           <PanelGroup orientation="horizontal" className="h-full w-full">
